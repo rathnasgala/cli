@@ -1,0 +1,27 @@
+{
+  "name": "@rathnasgala/cli",
+  "version": "0.0.1",
+  "type": "module",
+  "files": [
+    "src"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
+  "bin": {
+    "gala": "./src/index.js"
+  },
+  "scripts": {
+    "test": "node --test",
+    "lint": "node --check src/index.js && node --check src/scaffold-options.js && node --check src/evaluation-date.js && node --check src/content-files.js && node --check src/assign-content-ids.js && node --check src/validate-command.js && node --check src/new-command.js && node --check src/doctor-command.js && node --check src/publication-state.js && node --check src/record-deployment-command.js && node --check src/configure-site.js && node --check src/github-device-flow.js && node --check src/gala-device-flow.js && node --check src/gala-credential-store.js && node --check src/auth-command.js && node --check src/site-registration-client.js && node --check src/github-template-repository.js && node --check src/github-repository-secret.js && node --check src/hook-command.js && node --check src/preview-command.js && node --check src/publish-command.js && node --check src/repository-limits.js && node --check src/workflow-command.js && node --check test/index.test.js && node --check test/repository-limits.test.js && node --check test/github-device-flow.test.js && node --check test/gala-device-flow.test.js && node --check test/gala-credential-store.test.js && node --check test/site-registration-client.test.js && node --check test/github-template-repository.test.js && node --check test/github-repository-secret.test.js && node --check test/validate-command.test.js && node --check test/preview-command.test.js && node --check test/publication-state.test.js && node --check test/record-deployment-command.test.js && node --check test/assign-content-ids.test.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "@rathnasgala/content-validation": "file:../v1/validation",
+    "libsodium-wrappers": "0.8.4",
+    "yaml": "2.9.0"
+  }
+}
