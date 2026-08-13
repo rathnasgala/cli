@@ -26,11 +26,12 @@ test('orchestrates template, registration, workflow, and one-time secret install
     writeWorkflow: async (input) => calls.push(['workflow', input]),
     installSecret: async (input) => calls.push(['secret', input]),
     installVariable: async (input) => calls.push(['variable', input]),
-    commit: async (root) => calls.push(['commit', root])
+    commit: async (root) => { calls.push(['commit', root]); return '0123456789abcdef0123456789abcdef01234567'; },
+    provisionPages: async (input) => { calls.push(['pages', input]); return { created: true }; }
   });
 
   assert.deepEqual(calls.map(([name]) => name), [
-    'generate', 'clone', 'configure', 'register', 'finalize', 'workflow', 'secret', 'variable', 'commit'
+    'generate', 'clone', 'configure', 'register', 'finalize', 'workflow', 'secret', 'variable', 'commit', 'pages'
   ]);
   assert.equal(calls[3][1].topology, 'PROVIDER_DEFAULT');
   assert.equal(calls[3][1].canonicalBaseUrl, 'https://rathnasgala.github.io/smoke01/');
@@ -40,6 +41,7 @@ test('orchestrates template, registration, workflow, and one-time secret install
     owner: 'rathnasgala', repository: 'smoke01', accessToken: 'github-token',
     variableName: 'GALA_API_BASE_URL', variableValue: 'https://api.gala67.com/'
   });
+  assert.equal(calls[9][1].commitSha, '0123456789abcdef0123456789abcdef01234567');
   assert.equal(result.siteId, '01K00000000000000000000000');
 });
 
@@ -70,7 +72,8 @@ test('adopts only a verified empty repository by repointing the local template c
     configure: async () => ({ site: { timezone: 'UTC' } }),
     register: async () => ({ siteId: '01K00000000000000000000000', siteSecret: 'secret', canonicalBaseUrl: 'https://rathnasgala.github.io/smoke01/' }),
     finalize: async () => {}, writeWorkflow: async () => {}, installSecret: async () => {},
-    installVariable: async () => {}, commit: async () => {}
+    installVariable: async () => {}, commit: async () => '0123456789abcdef0123456789abcdef01234567',
+    provisionPages: async () => ({ created: true })
   });
   assert.deepEqual(calls.map(([name]) => name), ['verify-empty', 'clone', 'origin']);
   assert.equal(calls[1][1].cloneUrl, 'https://github.com/rathnasgala/site-template.git');
@@ -90,11 +93,33 @@ test('resumes only a checkout whose origin matches the requested repository', as
     configure: async () => ({ site: { timezone: 'UTC' } }),
     register: async () => ({ siteId: '01K00000000000000000000000', siteSecret: 'secret', canonicalBaseUrl: 'https://rathnasgala.github.io/smoke01/' }),
     finalize: async () => {}, writeWorkflow: async () => {}, installSecret: async () => {},
-    installVariable: async () => {}, commit: async () => {}
+    installVariable: async () => {}, commit: async () => '0123456789abcdef0123456789abcdef01234567',
+    provisionPages: async () => ({ created: true })
   });
   assert.deepEqual(calls, [['verify-checkout', {
     root: '/tmp/smoke01', owner: 'rathnasgala', repository: 'smoke01'
   }]]);
+});
+
+test('build-only scaffolding never provisions GitHub Pages', async () => {
+  const result = await scaffoldSite({
+    owner: 'rathnasgala', repository: 'hosted-blog', target: '/tmp/hosted-blog',
+    githubInstallationId: 153144989, resumeExistingCheckout: true, buildMode: 'build-only',
+    siteOptions: { timezone: 'UTC' },
+    readGithub: async () => ({ accessToken: 'github-token', scopes: ['repo', 'workflow'] }),
+    readGala: async () => ({ accessToken: 'gala-token', apiBaseUrl: 'https://api.gala67.com' }),
+    verifyCheckout: async ({ root }) => root,
+    configure: async () => ({ site: { timezone: 'UTC' } }),
+    register: async () => ({
+      siteId: '01K00000000000000000000000', siteSecret: 'secret',
+      canonicalBaseUrl: 'https://rathnasgala.github.io/hosted-blog/'
+    }),
+    finalize: async () => {}, writeWorkflow: async () => {}, installSecret: async () => {},
+    installVariable: async () => {},
+    commit: async () => '0123456789abcdef0123456789abcdef01234567',
+    provisionPages: async () => { throw new Error('build-only must not provision Pages'); }
+  });
+  assert.equal(result.pages, null);
 });
 
 test('rejects conflicting initial-adoption and resume modes before mutation', async () => {

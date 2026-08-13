@@ -9,15 +9,20 @@ test('commits only generated configuration and workflow before pushing without a
   const spawnProcess = (command, args, options) => {
     calls.push({ command, args, options });
     const child = new EventEmitter();
-    queueMicrotask(() => child.emit('exit', args.includes('--quiet') ? 1 : 0, null));
+    child.stdout = new EventEmitter();
+    queueMicrotask(() => {
+      if (args.includes('rev-parse')) child.stdout.emit('data', '0123456789abcdef0123456789abcdef01234567\n');
+      child.emit('exit', args.includes('--quiet') ? 1 : 0, null);
+    });
     return child;
   };
-  await commitScaffold('/site', { spawnProcess });
+  assert.equal(await commitScaffold('/site', { spawnProcess }), '0123456789abcdef0123456789abcdef01234567');
   assert.deepEqual(calls.map(({ args }) => args), [
     ['-C', '/site', 'add', '--', 'site.config.yml', '.github/workflows/publish.yml'],
     ['-C', '/site', 'diff', '--cached', '--quiet', '--exit-code'],
     ['-C', '/site', 'commit', '-m', 'chore(gala): configure site'],
-    ['-C', '/site', 'push', 'origin', 'HEAD']
+    ['-C', '/site', 'push', 'origin', 'HEAD'],
+    ['-C', '/site', 'rev-parse', 'HEAD']
   ]);
   assert.ok(calls.every(({ options }) => options.shell === false));
 });
@@ -27,13 +32,18 @@ test('skips an empty retry commit but still retries the push', async () => {
   const spawnProcess = (command, args, options) => {
     calls.push({ command, args, options });
     const child = new EventEmitter();
-    queueMicrotask(() => child.emit('exit', 0, null));
+    child.stdout = new EventEmitter();
+    queueMicrotask(() => {
+      if (args.includes('rev-parse')) child.stdout.emit('data', '0123456789abcdef0123456789abcdef01234567\n');
+      child.emit('exit', 0, null);
+    });
     return child;
   };
   await commitScaffold('/site', { spawnProcess });
   assert.deepEqual(calls.map(({ args }) => args), [
     ['-C', '/site', 'add', '--', 'site.config.yml', '.github/workflows/publish.yml'],
     ['-C', '/site', 'diff', '--cached', '--quiet', '--exit-code'],
-    ['-C', '/site', 'push', 'origin', 'HEAD']
+    ['-C', '/site', 'push', 'origin', 'HEAD'],
+    ['-C', '/site', 'rev-parse', 'HEAD']
   ]);
 });

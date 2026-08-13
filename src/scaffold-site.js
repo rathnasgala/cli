@@ -7,6 +7,7 @@ import { readGithubCredential } from './github-credential-store.js';
 import { cloneRepository, generateRepositoryFromTemplate } from './github-template-repository.js';
 import { installRepositorySecret } from './github-repository-secret.js';
 import { installRepositoryVariable } from './github-repository-variable.js';
+import { provisionGithubPages } from './github-pages-provisioning.js';
 import { registerSite } from './site-registration-client.js';
 import { writeRegisteredSiteConfiguration } from './site-config-registration.js';
 import { writePublishWorkflow } from './workflow-command.js';
@@ -35,6 +36,7 @@ export async function scaffoldSite({
   configure = configureSite, register = registerSite, finalize = writeRegisteredSiteConfiguration,
   writeWorkflow = writePublishWorkflow, installSecret = installRepositorySecret,
   installVariable = installRepositoryVariable,
+  provisionPages = provisionGithubPages,
   commit = commitScaffold, verifyEmpty = verifyEmptyRepository, setOrigin = setRepositoryOrigin,
   verifyCheckout = verifyRepositoryOrigin
 }) {
@@ -98,6 +100,11 @@ export async function scaffoldSite({
     owner: repositoryOwner, repository: repositoryName, accessToken: github.accessToken,
     variableName: 'GALA_API_BASE_URL', variableValue: gala.apiBaseUrl
   });
-  await commit(root);
-  return Object.freeze({ root, fullName: generated.fullName, siteId: registration.siteId });
+  const commitSha = await commit(root);
+  const pages = buildMode === 'build-and-deploy' ? await provisionPages({
+    owner: repositoryOwner, repository: repositoryName, accessToken: github.accessToken, commitSha
+  }) : null;
+  return Object.freeze({
+    root, fullName: generated.fullName, siteId: registration.siteId, commitSha, pages
+  });
 }
