@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, symlink, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
@@ -9,9 +9,15 @@ import { repositoryEvaluationDate } from '../src/evaluation-date.js';
 
 async function fixture(timezone) {
   const root = await mkdtemp(path.join(tmpdir(), 'gala-date-'));
+  await mkdir(path.join(root, '.gala'));
+  await writeFile(path.join(root, '.gala', 'managed-files.json'), JSON.stringify({
+    themePackage: { name: '@rathnasgala/theme', version: '0.0.1', availableDesignThemes: ['editorial'] }
+  }));
   await writeFile(path.join(root, 'site.config.yml'), stringify({
     schemaVersion: 1,
-    site: { timezone }
+    site: { timezone },
+    design: { theme: 'editorial' },
+    framework: { themePackage: { name: '@rathnasgala/theme', version: '0.0.1' } }
   }));
   return root;
 }

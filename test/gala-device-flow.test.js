@@ -81,3 +81,21 @@ test('reports expiry and denial with explicit Gala reauthentication guidance', a
     /was denied/
   );
 });
+
+test('reports an upstream non-JSON response without echoing its body', async () => {
+  const sensitiveBody = '<html>proxy failure containing credential material</html>';
+  await assert.rejects(
+    requestGalaDeviceCode({
+      fetchImpl: async () => ({
+        ok: false,
+        status: 502,
+        json: async () => { throw new SyntaxError(sensitiveBody); }
+      })
+    }),
+    (error) => {
+      assert.match(error.message, /invalid JSON \(HTTP 502\)/);
+      assert.doesNotMatch(error.message, /credential material/);
+      return true;
+    }
+  );
+});

@@ -63,9 +63,12 @@ export async function installRepositorySecret({
 
   const ciphertext = sodiumImpl.crypto_box_seal(
     sodiumImpl.from_string(plaintext),
-    sodiumImpl.from_base64(publicKey)
+    sodiumImpl.from_base64(publicKey, sodiumImpl.base64_variants.ORIGINAL)
   );
-  const encryptedValue = sodiumImpl.to_base64(ciphertext);
+  const encryptedValue = sodiumImpl.to_base64(
+    ciphertext,
+    sodiumImpl.base64_variants.ORIGINAL
+  );
 
   const uploadResponse = await fetchImpl(
     `${baseUrl}/${encodeURIComponent(normalizedSecretName)}`,

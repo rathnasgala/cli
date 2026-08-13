@@ -14,7 +14,20 @@ async function fixture(post, filename = 'index.en.md') {
   const root = await mkdtemp(path.join(tmpdir(), 'gala-validation-'));
   const postDirectory = path.join(root, 'content', 'posts', 'example');
   await mkdir(postDirectory, { recursive: true });
-  await writeFile(path.join(root, 'site.config.yml'), `schemaVersion: 1\nsite:\n  timezone: Asia/Kolkata\n`);
+  await mkdir(path.join(root, '.gala'));
+  await writeFile(path.join(root, '.gala', 'managed-files.json'), JSON.stringify({
+    themePackage: { name: '@rathnasgala/theme', version: '0.0.1', availableDesignThemes: ['editorial'] }
+  }));
+  await writeFile(path.join(root, 'site.config.yml'), `schemaVersion: 1
+site:
+  timezone: Asia/Kolkata
+design:
+  theme: editorial
+framework:
+  themePackage:
+    name: "@rathnasgala/theme"
+    version: "0.0.1"
+`);
   await writeFile(path.join(postDirectory, filename), post, 'utf8');
   return root;
 }

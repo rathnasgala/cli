@@ -123,7 +123,7 @@ async function assertSafeAncestors(root, file) {
   }
 }
 
-export async function repairFramework(root, sourceRoot) {
+export async function repairFramework(root, sourceRoot, { renameImpl = rename, siteConfiguration } = {}) {
   const manifestPath = path.resolve(root, '.gala', 'managed-files.json');
   const sourceManifestPath = path.resolve(sourceRoot, '.gala', 'managed-files.json');
   await assertSafeAncestors(sourceRoot, sourceManifestPath);
@@ -154,75 +154,61 @@ export async function repairFramework(root, sourceRoot) {
     validated.push({ ...finding, source, target, targetExists: targetMetadata != null });
   }
 
-  const repaired = [];
-  for (const item of validated) {
-    await mkdir(path.dirname(item.target), { recursive: true });
-    const temporary = `${item.target}.gala-repair-${process.pid}`;
-    const backup = `${item.target}.gala-backup-${process.pid}`;
-    let backedUp = false;
-    try {
-      await writeFile(temporary, await readFile(item.source), { flag: 'wx' });
-      if (item.targetExists) {
-        await rename(item.target, backup);
-        backedUp = true;
-      }
-    } catch (error) {
-      await rm(temporary, { force: true });
-      throw error;
-    }
-
-    try {
-      await rename(temporary, item.target);
-    } catch (error) {
-      await rm(temporary, { force: true });
-      if (backedUp) {
-        try {
-          await rename(backup, item.target);
-        } catch (restoreError) {
-          throw new AggregateError([error, restoreError], `Repair and rollback failed: ${item.path}`);
-        }
-      }
-      throw error;
-    }
-
-    if (backedUp) await rm(backup);
-    repaired.push(item.path);
-  }
-  if (await installTrustedManifest(manifestPath, sourceManifest)) {
-    repaired.push('.gala/managed-files.json');
-  }
-  return repaired;
-}
-
-async function installTrustedManifest(target, source) {
-  let existing = null;
-  try {
-    existing = await readFile(target);
-  } catch (error) {
+  let existingManifest = null;
+  try { existingManifest = await readFile(manifestPath); } catch (error) {
     if (error.code !== 'ENOENT') throw error;
   }
-  if (existing?.equals(source)) return false;
+  if (!existingManifest?.equals(sourceManifest)) {
+    validated.push({
+      path: '.gala/managed-files.json',
+      target: manifestPath,
+      bytes: sourceManifest,
+      targetExists: existingManifest != null
+    });
+  }
+  if (siteConfiguration != null) {
+    const configTarget = path.resolve(root, 'site.config.yml');
+    await assertSafeAncestors(root, configTarget);
+    const configMetadata = await assertNotSymbolicLink(configTarget, false);
+    if (!configMetadata.isFile()) throw new TypeError('site.config.yml must be a regular file');
+    validated.push({
+      path: 'site.config.yml', target: configTarget,
+      bytes: Buffer.from(siteConfiguration), targetExists: true
+    });
+  }
 
-  await mkdir(path.dirname(target), { recursive: true });
-  const temporary = `${target}.gala-repair-${process.pid}`;
-  const backup = `${target}.gala-backup-${process.pid}`;
-  let backedUp = false;
+  const transaction = `${process.pid}-${Date.now()}`;
+  const prepared = [];
   try {
-    await writeFile(temporary, source, { flag: 'wx' });
-    if (existing != null) {
-      await rename(target, backup);
-      backedUp = true;
+    for (const item of validated) {
+      await mkdir(path.dirname(item.target), { recursive: true });
+      const temporary = `${item.target}.gala-repair-${transaction}`;
+      const backup = `${item.target}.gala-backup-${transaction}`;
+      await writeFile(temporary, item.bytes ?? await readFile(item.source), { flag: 'wx' });
+      prepared.push({ ...item, temporary, backup, backedUp: false, installed: false });
     }
-    try {
-      await rename(temporary, target);
-    } catch (error) {
-      if (backedUp) await rename(backup, target);
-      throw error;
+    for (const item of prepared) {
+      if (item.targetExists) {
+        await renameImpl(item.target, item.backup);
+        item.backedUp = true;
+      }
+      await renameImpl(item.temporary, item.target);
+      item.installed = true;
     }
-    if (backedUp) await rm(backup);
-    return true;
   } catch (error) {
-    await rm(temporary, { force: true });
+    const rollbackErrors = [];
+    for (const item of [...prepared].reverse()) {
+      try {
+        if (item.installed) await rm(item.target, { force: true });
+        if (item.backedUp) await renameImpl(item.backup, item.target);
+        await rm(item.temporary, { force: true });
+      } catch (rollbackError) { rollbackErrors.push(rollbackError); }
+    }
+    if (rollbackErrors.length > 0) {
+      throw new AggregateError([error, ...rollbackErrors], 'Framework repair and rollback failed');
+    }
     throw error;
   }
+  for (const item of prepared) if (item.backedUp) await rm(item.backup);
+  return prepared.map(({ path: repairedPath }) => repairedPath);
 }

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { mkdtemp, mkdir, readFile, rm, symlink, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, rename, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
@@ -62,6 +62,23 @@ test('validates all sources before changing any target', async () => {
 
   await assert.rejects(() => repairFramework(root, source), /hash mismatch/);
   assert.equal(await readFile(path.join(root, 'managed.txt'), 'utf8'), 'changed');
+});
+
+test('rolls back every managed file when a later transactional replacement fails', async () => {
+  const root = await fixture();
+  const source = await fixture();
+  await writeFile(path.join(root, 'managed.txt'), 'old-one');
+  await writeFile(path.join(root, 'missing.txt'), 'old-two');
+  await writeFile(path.join(source, 'missing.txt'), 'expected');
+  let installs = 0;
+  const renameImpl = async (from, to) => {
+    if (from.includes('.gala-repair-') && ++installs === 2) throw new Error('injected replacement failure');
+    await rename(from, to);
+  };
+
+  await assert.rejects(() => repairFramework(root, source, { renameImpl }), /injected replacement failure/);
+  assert.equal(await readFile(path.join(root, 'managed.txt'), 'utf8'), 'old-one');
+  assert.equal(await readFile(path.join(root, 'missing.txt'), 'utf8'), 'old-two');
 });
 
 test('refuses symbolic-link repair targets', async () => {

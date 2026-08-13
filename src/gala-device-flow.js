@@ -29,7 +29,13 @@ async function postForm(fetchImpl, url, fields) {
     },
     body: new URLSearchParams(fields)
   });
-  const payload = await response.json();
+  let payload;
+  try {
+    payload = await response.json();
+  } catch {
+    const status = Number.isInteger(response?.status) ? ` (HTTP ${response.status})` : '';
+    throw new TypeError(`Gala device authorization returned invalid JSON${status}`);
+  }
   if (payload == null || Array.isArray(payload) || typeof payload !== 'object') {
     throw new TypeError('Gala device authorization response must be a JSON object');
   }

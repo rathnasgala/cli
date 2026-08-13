@@ -1,11 +1,28 @@
 import assert from 'node:assert/strict';
-import { access, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { access, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 
 import { createContentId } from '@rathnasgala/content-validation';
 import { createPost } from '../src/new-command.js';
+
+async function writeSiteConfig(root) {
+  await mkdir(path.join(root, '.gala'));
+  await writeFile(path.join(root, '.gala', 'managed-files.json'), JSON.stringify({
+    themePackage: { name: '@rathnasgala/theme', version: '0.0.1', availableDesignThemes: ['editorial'] }
+  }));
+  await writeFile(path.join(root, 'site.config.yml'), `schemaVersion: 1
+site:
+  timezone: America/Los_Angeles
+design:
+  theme: editorial
+framework:
+  themePackage:
+    name: "@rathnasgala/theme"
+    version: "0.0.1"
+`);
+}
 
 test('creates the standard post and media structure', async () => {
   const root = await mkdtemp(path.join(tmpdir(), 'gala-new-'));
@@ -45,10 +62,7 @@ test('uses one canonical BCP-47 tag in frontmatter and the variant filename', as
 
 test('defaults publishAfterDate to today in the configured site timezone', async () => {
   const root = await mkdtemp(path.join(tmpdir(), 'gala-new-'));
-  await writeFile(
-    path.join(root, 'site.config.yml'),
-    'schemaVersion: 1\nsite:\n  timezone: America/Los_Angeles\n'
-  );
+  await writeSiteConfig(root);
 
   const result = await createPost({
     root,
@@ -62,10 +76,7 @@ test('defaults publishAfterDate to today in the configured site timezone', async
 
 test('encodes the injected creation instant in a new article ULID', async () => {
   const root = await mkdtemp(path.join(tmpdir(), 'gala-new-'));
-  await writeFile(
-    path.join(root, 'site.config.yml'),
-    'schemaVersion: 1\nsite:\n  timezone: America/Los_Angeles\n'
-  );
+  await writeSiteConfig(root);
   const instant = Date.parse('2026-06-15T06:30:45.123Z');
 
   const result = await createPost({

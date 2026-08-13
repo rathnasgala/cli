@@ -11,6 +11,15 @@ import { parse } from 'yaml';
 
 const execute = promisify(execFile);
 
+test('help exits successfully before reading credentials or mutating a repository', async () => {
+  const { stdout, stderr } = await execute(
+    process.execPath,
+    [fileURLToPath(new URL('../src/index.js', import.meta.url)), 'scaffold', '--help']
+  );
+  assert.match(stdout, /^Usage: gala /);
+  assert.equal(stderr, '');
+});
+
 test('configure updates existing site design without invoking scaffold integration', async () => {
   const root = await mkdtemp(path.join(tmpdir(), 'gala-cli-configure-'));
   const configPath = path.join(root, 'site.config.yml');

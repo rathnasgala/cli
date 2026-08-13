@@ -16,12 +16,22 @@ import { installPrePushHook } from './hook-command.js';
 import { reportRepositoryLimitWarnings } from './repository-limits.js';
 import { recordDeployment } from './record-deployment-command.js';
 import { authenticateGala } from './auth-command.js';
+import { createInterface } from 'node:readline/promises';
+import { upgradeTheme } from './upgrade-command.js';
+import { authenticateGithub } from './github-auth-command.js';
+import { scaffoldSite } from './scaffold-site.js';
 
 const [command, ...args] = process.argv.slice(2);
+const usage = 'Usage: gala <auth|configure|scaffold|validate|new|doctor|hook|preview|publish|record-deployment|upgrade|workflow> [options]';
+
+if (command === 'help' || args.includes('--help') || args.includes('-h')) {
+  process.stdout.write(`${usage}\n`);
+  process.exit(0);
+}
 
 const recognizedCommands = new Set([
-  'auth', 'configure', 'scaffold', 'validate', 'new', 'doctor', 'preview',
-  'workflow', 'publish', 'record-deployment', 'hook'
+  'auth', 'configure', 'validate', 'new', 'doctor', 'preview',
+  'workflow', 'publish', 'record-deployment', 'hook', 'upgrade'
 ]);
 function commandRoot() {
   const rootIndex = args.indexOf('--root');
@@ -39,16 +49,44 @@ if (recognizedCommands.has(command)) {
 }
 
 if (command === 'auth') {
-  const apiIndex = args.indexOf('--api-base-url');
-  const apiBaseUrl = apiIndex === -1 ? 'https://api.gala67.com' : args[apiIndex + 1];
-  const result = await authenticateGala({
-    apiBaseUrl,
-    showInstructions: ({ verificationUri, userCode }) => {
-      process.stdout.write(`Open ${verificationUri}\nEnter code: ${userCode}\n`);
-    }
+  if (args[0] === 'github') {
+    const result = await authenticateGithub({
+      showScopeWarning: ({ explanation }) => process.stdout.write(`GitHub authorization: ${explanation}\n`),
+      showInstructions: ({ verificationUri, userCode }) => {
+        process.stdout.write(`Open ${verificationUri}\nEnter code: ${userCode}\n`);
+      }
+    });
+    process.stdout.write(`GitHub authentication stored securely with scopes: ${result.scopes.join(', ')}.\n`);
+  } else {
+    const apiIndex = args.indexOf('--api-base-url');
+    const apiBaseUrl = apiIndex === -1 ? 'https://api.gala67.com' : args[apiIndex + 1];
+    const result = await authenticateGala({
+      apiBaseUrl,
+      showInstructions: ({ verificationUri, userCode }) => {
+        process.stdout.write(`Open ${verificationUri}\nEnter code: ${userCode}\n`);
+      }
+    });
+    process.stdout.write(`Gala authentication stored securely until ${result.expiresAt.toISOString()}.\n`);
+  }
+} else if (command === 'scaffold') {
+  const valueFor = (name) => {
+    const index = args.indexOf(name);
+    return index === -1 ? undefined : args[index + 1];
+  };
+  const installationId = Number(valueFor('--installation-id'));
+  const result = await scaffoldSite({
+    owner: valueFor('--owner'),
+    repository: valueFor('--repository'),
+    target: valueFor('--target'),
+    githubInstallationId: installationId,
+    siteOptions: parseScaffoldOptions(args),
+    buildMode: valueFor('--mode') ?? 'build-and-deploy',
+    emptyExistingRepository: args.includes('--empty-existing-repository'),
+    resumeExistingCheckout: args.includes('--resume')
   });
-  process.stdout.write(`Gala authentication stored securely until ${result.expiresAt.toISOString()}.\n`);
-} else if (command === 'scaffold' || command === 'configure') {
+  await reportRepositoryLimitWarnings(result.root);
+  process.stdout.write(`Scaffolded ${result.fullName} as Gala site ${result.siteId} in ${result.root}.\n`);
+} else if (command === 'configure') {
   const rootIndex = args.indexOf('--root');
   const root = rootIndex === -1 ? process.cwd() : args[rootIndex + 1];
   const options = parseScaffoldOptions(args);
@@ -148,12 +186,39 @@ if (command === 'auth') {
     + `of ${result.state.posts.length} article(s).\n`
     + `Recorded state SHA: ${result.recordedStateSha}\n`
   );
+} else if (command === 'upgrade') {
+  const valueFor = (name) => {
+    const index = args.indexOf(name);
+    return index === -1 ? undefined : args[index + 1];
+  };
+  const terminalConfirm = async ({ installed, version, channel }) => {
+    if (args.includes('--yes')) return true;
+    const terminal = createInterface({ input: process.stdin, output: process.stdout });
+    try {
+      const answer = await terminal.question(`Upgrade theme ${installed} -> ${version} (${channel})? [y/N] `);
+      return /^(?:y|yes)$/i.test(answer.trim());
+    } finally { terminal.close(); }
+  };
+  const result = await upgradeTheme({
+    root: valueFor('--root') ?? process.cwd(),
+    channel: valueFor('--channel'),
+    confirm: terminalConfirm
+  });
+  process.stdout.write(result.cancelled ? 'Theme upgrade cancelled.\n'
+    : result.changed ? `Upgraded theme to ${result.version}.\n`
+      : `Theme ${result.version} is already installed.\n`);
+  process.stdout.write(
+    `Action major v${result.action.currentMajor}; `
+    + (result.action.newerAvailable
+      ? `v${result.action.latestMajor} is available.\n`
+      : 'no newer major is available.\n')
+  );
 } else if (command === 'hook' && args[0] === 'install') {
   const rootIndex = args.indexOf('--root');
   const root = rootIndex === -1 ? process.cwd() : args[rootIndex + 1];
   const result = await installPrePushHook(root);
   process.stdout.write(`${result.installed ? 'Installed' : 'Already installed'} ${result.target}\n`);
 } else {
-  process.stderr.write('Usage: gala <auth|configure|scaffold|validate|new|doctor|hook|preview|publish|record-deployment|workflow> [options]\n');
+  process.stderr.write(`${usage}\n`);
   process.exitCode = 1;
 }

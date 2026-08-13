@@ -34,6 +34,9 @@ function gitRunner(codes, calls) {
 test('records, path-scopes, commits, and pushes the post-deployment state', async () => {
   const root = await mkdtemp(path.join(tmpdir(), 'gala-record-deployment-'));
   await mkdir(path.join(root, path.dirname(BUILD_MANIFEST_PATH)), { recursive: true });
+  await writeFile(path.join(root, '.gala', 'managed-files.json'), JSON.stringify({
+    themePackage: { name: '@rathnasgala/theme', version: '0.0.1', availableDesignThemes: ['editorial'] }
+  }));
   const postPath = 'content/posts/post/index.en.md';
   await mkdir(path.join(root, path.dirname(postPath)), { recursive: true });
   const postSource = `---
@@ -48,6 +51,12 @@ Body
   await writeFile(path.join(root, 'site.config.yml'), `schemaVersion: 1
 site:
   timezone: America/Los_Angeles
+design:
+  theme: editorial
+framework:
+  themePackage:
+    name: "@rathnasgala/theme"
+    version: "0.0.1"
 `);
   await writeFile(path.join(root, BUILD_MANIFEST_PATH), JSON.stringify({
     schemaVersion: 1,

@@ -18,14 +18,16 @@ test('fetches a fresh repository key, awaits sodium, seals, and uploads without 
   let readyResolved = false;
   let resolveReady;
   const sodium = {
+    base64_variants: { ORIGINAL: 1 },
     ready: new Promise((resolve) => {
       resolveReady = () => {
         readyResolved = true;
         resolve();
       };
     }),
-    from_base64(value) {
+    from_base64(value, variant) {
       assert.equal(value, 'cmVwb3NpdG9yeS1rZXk=');
+      assert.equal(variant, 1);
       return Uint8Array.from([1, 2, 3]);
     },
     from_string(value) {
@@ -38,8 +40,9 @@ test('fetches a fresh repository key, awaits sodium, seals, and uploads without 
       assert.deepEqual(publicKey, Uint8Array.from([1, 2, 3]));
       return Uint8Array.from([7, 8, 9]);
     },
-    to_base64(ciphertext) {
+    to_base64(ciphertext, variant) {
       assert.deepEqual(ciphertext, Uint8Array.from([7, 8, 9]));
+      assert.equal(variant, 1);
       return 'sealed-value';
     }
   };
