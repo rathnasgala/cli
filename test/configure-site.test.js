@@ -9,12 +9,13 @@ import { configureSite } from '../src/configure-site.js';
 
 async function fixture() {
   const root = await mkdtemp(path.join(tmpdir(), 'gala-configure-'));
-  await writeFile(path.join(root, 'site.config.yml'), stringify({
+  const config = stringify({
     schemaVersion: 1,
     site: { name: 'Preserved', defaultLanguage: 'en', timezone: 'UTC' },
     design: { theme: 'editorial', palette: 'default' },
     sharing: { targets: [], socialProfiles: {} }
-  }));
+  }).replace('schemaVersion: 1\n', 'schemaVersion: 1\n# Managed configuration boundary.\n');
+  await writeFile(path.join(root, 'site.config.yml'), config);
   await writeFile(path.join(root, 'custom.css'), 'author override');
   return root;
 }
@@ -35,7 +36,33 @@ test('applies high-level design options while preserving other configuration', a
   assert.equal(config.site.name, 'Preserved');
   assert.equal(config.design.theme, 'portfolio');
   assert.equal(config.design.palette, 'ocean');
+  assert.match(await readFile(path.join(root, 'site.config.yml'), 'utf8'), /# Managed configuration boundary\./);
   assert.equal(await readFile(path.join(root, 'custom.css'), 'utf8'), 'author override');
+});
+
+test('an option-free resume validates without rewriting configuration bytes', async () => {
+  const root = await fixture();
+  const configPath = path.join(root, 'site.config.yml');
+  const original = `schemaVersion: 1
+# Managed by Gala CLI. Change visual choices under design; use \`gala upgrade\`
+# to change this exact artifact pin so installed files and the pin stay aligned.
+site:
+  name: Preserved
+  defaultLanguage: en
+  timezone: UTC
+design:
+  theme: editorial
+  palette: default
+sharing:
+  targets: []
+  socialProfiles: {}
+`;
+  await writeFile(configPath, original);
+
+  const config = await configureSite(root, {});
+
+  assert.equal(config.site.name, 'Preserved');
+  assert.equal(await readFile(configPath, 'utf8'), original);
 });
 
 test('writes validated site, locale, sharing, and social profile settings', async () => {

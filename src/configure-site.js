@@ -1,7 +1,7 @@
 import { lstat, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { normalizeSiteConfigurationOptions } from '@rathnasgala/content-validation';
-import { parse, stringify } from 'yaml';
+import { parseDocument } from 'yaml';
 
 import { scaffoldOptionNames } from './scaffold-options.js';
 
@@ -25,14 +25,18 @@ export async function configureSite(root, designOptions) {
   }
 
   let config;
+  let document;
   try {
-    config = parse(await readFile(configPath, 'utf8'));
+    document = parseDocument(await readFile(configPath, 'utf8'));
+    if (document.errors.length > 0) throw document.errors[0];
+    config = document.toJS();
   } catch (error) {
     throw new TypeError(`Invalid site.config.yml: ${error.message}`);
   }
   if (config.schemaVersion !== 1 || config.design == null || Array.isArray(config.design)) {
     throw new TypeError('Unsupported site configuration schema');
   }
+  if (Object.keys(designOptions).length === 0) return config;
 
   const siteOptions = Object.fromEntries(
     Object.entries(designOptions).filter(([name]) => !scaffoldOptionNames.includes(name))
@@ -42,25 +46,38 @@ export async function configureSite(root, designOptions) {
   for (const [name, value] of Object.entries(designOptions)) {
     if (scaffoldOptionNames.includes(name)) {
       config.design[name] = nonEmptyString(value, `Design option ${name}`);
+      document.setIn(['design', name], config.design[name]);
     }
   }
-  if (normalizedSiteOptions.siteName != null) config.site.name = normalizedSiteOptions.siteName;
-  if (normalizedSiteOptions.siteAuthor != null) config.site.author = normalizedSiteOptions.siteAuthor;
+  if (normalizedSiteOptions.siteName != null) {
+    config.site.name = normalizedSiteOptions.siteName;
+    document.setIn(['site', 'name'], config.site.name);
+  }
+  if (normalizedSiteOptions.siteAuthor != null) {
+    config.site.author = normalizedSiteOptions.siteAuthor;
+    document.setIn(['site', 'author'], config.site.author);
+  }
   if (normalizedSiteOptions.defaultLanguage != null) {
     config.site.defaultLanguage = normalizedSiteOptions.defaultLanguage;
+    document.setIn(['site', 'defaultLanguage'], config.site.defaultLanguage);
   }
-  if (normalizedSiteOptions.timezone != null) config.site.timezone = normalizedSiteOptions.timezone;
+  if (normalizedSiteOptions.timezone != null) {
+    config.site.timezone = normalizedSiteOptions.timezone;
+    document.setIn(['site', 'timezone'], config.site.timezone);
+  }
   if (normalizedSiteOptions.shareTargets != null) {
     config.sharing.targets = normalizedSiteOptions.shareTargets;
+    document.setIn(['sharing', 'targets'], config.sharing.targets);
   }
   if (normalizedSiteOptions.socialProfiles != null) {
     config.sharing.socialProfiles = normalizedSiteOptions.socialProfiles;
+    document.setIn(['sharing', 'socialProfiles'], config.sharing.socialProfiles);
   }
 
   const temporary = `${configPath}.gala-config-${process.pid}`;
   const backup = `${configPath}.gala-backup-${process.pid}`;
   try {
-    await writeFile(temporary, stringify(config), { flag: 'wx' });
+    await writeFile(temporary, String(document), { flag: 'wx' });
     await rename(configPath, backup);
     try {
       await rename(temporary, configPath);
