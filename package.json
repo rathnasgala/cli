@@ -19,6 +19,10 @@
   "engines": {
     "node": ">=18"
   },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/rathnasgala/cli.git"
+  },
   "dependencies": {
     "@rathnasgala/content-validation": "0.0.1",
     "libsodium-wrappers": "0.8.4",

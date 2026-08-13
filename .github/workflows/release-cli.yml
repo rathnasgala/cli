@@ -26,7 +26,7 @@ jobs:
       - name: Install exact release tooling and dependencies
         run: |
           npm install --global npm@12.0.2
-          npm install --ignore-scripts
+          npm ci --ignore-scripts
 
       - name: Verify tagged package
         shell: bash

@@ -8,6 +8,8 @@ test('CLI release uses OIDC, exact tag matching, and no stored registry token', 
   assert.match(workflow, /id-token: write/);
   assert.match(workflow, /environment: npm-cli-release/);
   assert.match(workflow, /npm@12\.0\.2/);
+  assert.match(workflow, /npm ci --ignore-scripts/);
+  assert.doesNotMatch(workflow, /npm install --ignore-scripts/);
   assert.match(workflow, /test "\$actual" = "\$expected"/);
   assert.match(workflow, /npm publish --access public --provenance/);
   assert.doesNotMatch(workflow, /NODE_AUTH_TOKEN|NPM_TOKEN|secrets\./);
