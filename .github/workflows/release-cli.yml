@@ -20,7 +20,7 @@ jobs:
       - name: Configure Node
         uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
-          node-version: 24.13.0
+          node-version: 24.15.0
           registry-url: https://registry.npmjs.org
 
       - name: Install exact release tooling and dependencies

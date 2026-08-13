@@ -15,6 +15,7 @@ test('CLI package metadata is already canonical before npm publishes it', () => 
 test('CLI release uses OIDC, exact tag matching, and no stored registry token', () => {
   assert.match(workflow, /id-token: write/);
   assert.match(workflow, /environment: npm-cli-release/);
+  assert.match(workflow, /node-version: 24\.15\.0/);
   assert.match(workflow, /npm@12\.0\.2/);
   assert.match(workflow, /npm ci --ignore-scripts/);
   assert.doesNotMatch(workflow, /npm install --ignore-scripts/);
