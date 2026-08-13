@@ -72,8 +72,12 @@ export async function registerSite({
   }
   const canonical = new URL(payload.canonicalBaseUrl);
   if (canonical.protocol !== 'https:' || canonical.username || canonical.password
-      || canonical.search || canonical.hash) {
+      || canonical.search || canonical.hash || canonical.pathname !== '/') {
     throw new TypeError('Gala site registration returned an invalid canonicalBaseUrl');
+  }
+  if (typeof payload.pathPrefix !== 'string'
+      || !/^\/(?:[^/?#]+(?:\/[^/?#]+)*)?$/.test(payload.pathPrefix)) {
+    throw new TypeError('Gala site registration returned an invalid pathPrefix');
   }
   const location = response.headers?.get?.('location');
   if (location !== `/v1/sites/${payload.siteId}`) {
@@ -82,6 +86,7 @@ export async function registerSite({
   return Object.freeze({
     siteId: payload.siteId,
     siteSecret: payload.siteSecret,
-    canonicalBaseUrl: canonical.href
+    canonicalBaseUrl: canonical.origin,
+    pathPrefix: payload.pathPrefix === '' ? '/' : payload.pathPrefix
   });
 }

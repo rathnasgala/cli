@@ -2,12 +2,20 @@ import { lstat, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { parse, stringify } from 'yaml';
 
-export async function writeRegisteredSiteConfiguration(root, { siteId, canonicalBaseUrl, topology }) {
+export async function writeRegisteredSiteConfiguration(root, {
+  siteId, canonicalBaseUrl, pathPrefix, topology
+}) {
   if (!/^[0-7][0-9A-HJKMNP-TV-Z]{25}$/.test(siteId)) throw new TypeError('siteId is invalid');
   if (topology !== 'provider-default') throw new TypeError('Only provider-default topology is implemented');
   const canonical = new URL(canonicalBaseUrl);
-  if (canonical.protocol !== 'https:' || canonical.username || canonical.password || canonical.search || canonical.hash) {
-    throw new TypeError('canonicalBaseUrl must be credential-free HTTPS');
+  if (canonical.protocol !== 'https:' || canonical.username || canonical.password || canonical.search
+      || canonical.hash || canonical.pathname !== '/') {
+    throw new TypeError('canonicalBaseUrl must be a credential-free HTTPS origin; put the URL path in pathPrefix');
+  }
+  const normalizedPrefix = pathPrefix === '' ? '/' : pathPrefix;
+  if (typeof normalizedPrefix !== 'string'
+      || !/^\/(?:[^/?#]+(?:\/[^/?#]+)*)?$/.test(normalizedPrefix)) {
+    throw new TypeError('pathPrefix must be a normalized URL path');
   }
   const target = path.resolve(root, 'site.config.yml');
   const metadata = await lstat(target);
@@ -19,8 +27,8 @@ export async function writeRegisteredSiteConfiguration(root, { siteId, canonical
   config.site.id = siteId;
   config.hosting.provider = 'github-pages';
   config.hosting.topology = topology;
-  config.hosting.canonicalBaseUrl = canonical.href.replace(/\/$/, '');
-  config.hosting.pathPrefix = canonical.pathname === '/' ? '/' : canonical.pathname.replace(/\/$/, '');
+  config.hosting.canonicalBaseUrl = canonical.origin;
+  config.hosting.pathPrefix = normalizedPrefix;
   const temporary = `${target}.gala-register-${process.pid}`;
   const backup = `${target}.gala-backup-${process.pid}`;
   try {

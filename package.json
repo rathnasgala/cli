@@ -24,7 +24,7 @@
     "url": "git+https://github.com/rathnasgala/cli.git"
   },
   "dependencies": {
-    "@rathnasgala/content-validation": "0.0.1",
+    "@rathnasgala/content-validation": "0.0.2",
     "libsodium-wrappers": "0.8.4",
     "tar": "7.5.22",
     "yaml": "2.9.0"

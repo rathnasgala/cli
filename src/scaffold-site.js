@@ -21,9 +21,8 @@ function segment(value, field) {
   return value;
 }
 
-function providerDefaultBase(owner, repository) {
-  const rootRepository = repository.toLowerCase() === `${owner}.github.io`.toLowerCase();
-  return `https://${owner.toLowerCase()}.github.io${rootRepository ? '/' : `/${repository}/`}`;
+function providerDefaultBase(owner) {
+  return `https://${owner.toLowerCase()}.github.io`;
 }
 
 export async function scaffoldSite({
@@ -77,7 +76,7 @@ export async function scaffoldSite({
     if (emptyExistingRepository) await setOrigin({ root, owner: repositoryOwner, repository: repositoryName });
   }
   const configured = await configure(root, siteOptions ?? {});
-  const canonicalBaseUrl = providerDefaultBase(repositoryOwner, repositoryName);
+  const canonicalBaseUrl = providerDefaultBase(repositoryOwner);
   const idempotencyKey = `scaffold-${createHash('sha256').update(`${repositoryOwner.toLowerCase()}/${repositoryName.toLowerCase()}`).digest('hex')}`;
   const registration = await register({
     apiBaseUrl: gala.apiBaseUrl, galaAccessToken: gala.accessToken, idempotencyKey,
@@ -87,6 +86,7 @@ export async function scaffoldSite({
   await finalize(root, {
     siteId: registration.siteId,
     canonicalBaseUrl: registration.canonicalBaseUrl,
+    pathPrefix: registration.pathPrefix,
     topology: 'provider-default'
   });
   await writeWorkflow({

@@ -20,7 +20,7 @@ test('orchestrates template, registration, workflow, and one-time secret install
     }; },
     register: async (input) => { calls.push(['register', input]); return {
       siteId: '01K00000000000000000000000', siteSecret: 'one-time-secret',
-      canonicalBaseUrl: 'https://rathnasgala.github.io/smoke01/'
+      canonicalBaseUrl: 'https://rathnasgala.github.io', pathPrefix: '/smoke01'
     }; },
     finalize: async (...input) => calls.push(['finalize', ...input]),
     writeWorkflow: async (input) => calls.push(['workflow', input]),
@@ -34,7 +34,7 @@ test('orchestrates template, registration, workflow, and one-time secret install
     'generate', 'clone', 'configure', 'register', 'finalize', 'workflow', 'secret', 'variable', 'commit', 'pages'
   ]);
   assert.equal(calls[3][1].topology, 'PROVIDER_DEFAULT');
-  assert.equal(calls[3][1].canonicalBaseUrl, 'https://rathnasgala.github.io/smoke01/');
+  assert.equal(calls[3][1].canonicalBaseUrl, 'https://rathnasgala.github.io');
   assert.match(calls[3][1].idempotencyKey, /^scaffold-[0-9a-f]{64}$/);
   assert.equal(calls[6][1].secretName, 'GALA_SITE_SECRET');
   assert.deepEqual(calls[7][1], {
@@ -70,7 +70,7 @@ test('adopts only a verified empty repository by repointing the local template c
     clone: async (input) => { calls.push(['clone', input]); return '/tmp/smoke01'; },
     setOrigin: async (input) => calls.push(['origin', input]),
     configure: async () => ({ site: { timezone: 'UTC' } }),
-    register: async () => ({ siteId: '01K00000000000000000000000', siteSecret: 'secret', canonicalBaseUrl: 'https://rathnasgala.github.io/smoke01/' }),
+    register: async () => ({ siteId: '01K00000000000000000000000', siteSecret: 'secret', canonicalBaseUrl: 'https://rathnasgala.github.io', pathPrefix: '/smoke01' }),
     finalize: async () => {}, writeWorkflow: async () => {}, installSecret: async () => {},
     installVariable: async () => {}, commit: async () => '0123456789abcdef0123456789abcdef01234567',
     provisionPages: async () => ({ created: true })
@@ -91,7 +91,7 @@ test('resumes only a checkout whose origin matches the requested repository', as
     generate: async () => { throw new Error('must not generate while resuming'); },
     clone: async () => { throw new Error('must not clone while resuming'); },
     configure: async () => ({ site: { timezone: 'UTC' } }),
-    register: async () => ({ siteId: '01K00000000000000000000000', siteSecret: 'secret', canonicalBaseUrl: 'https://rathnasgala.github.io/smoke01/' }),
+    register: async () => ({ siteId: '01K00000000000000000000000', siteSecret: 'secret', canonicalBaseUrl: 'https://rathnasgala.github.io', pathPrefix: '/smoke01' }),
     finalize: async () => {}, writeWorkflow: async () => {}, installSecret: async () => {},
     installVariable: async () => {}, commit: async () => '0123456789abcdef0123456789abcdef01234567',
     provisionPages: async () => ({ created: true })
@@ -112,7 +112,7 @@ test('build-only scaffolding never provisions GitHub Pages', async () => {
     configure: async () => ({ site: { timezone: 'UTC' } }),
     register: async () => ({
       siteId: '01K00000000000000000000000', siteSecret: 'secret',
-      canonicalBaseUrl: 'https://rathnasgala.github.io/hosted-blog/'
+      canonicalBaseUrl: 'https://rathnasgala.github.io', pathPrefix: '/hosted-blog'
     }),
     finalize: async () => {}, writeWorkflow: async () => {}, installSecret: async () => {},
     installVariable: async () => {},

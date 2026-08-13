@@ -20,11 +20,35 @@ hosting:
 `);
   await writeRegisteredSiteConfiguration(root, {
     siteId: '01K00000000000000000000000',
-    canonicalBaseUrl: 'https://rathnasgala.github.io/smoke01/',
+    canonicalBaseUrl: 'https://rathnasgala.github.io',
+    pathPrefix: '/smoke01',
     topology: 'provider-default'
   });
   const config = parse(await readFile(path.join(root, 'site.config.yml'), 'utf8'));
   assert.equal(config.site.id, '01K00000000000000000000000');
-  assert.equal(config.hosting.canonicalBaseUrl, 'https://rathnasgala.github.io/smoke01');
+  assert.equal(config.hosting.canonicalBaseUrl, 'https://rathnasgala.github.io');
   assert.equal(config.hosting.pathPrefix, '/smoke01');
+});
+
+test('normalizes an empty root prefix and rejects a path-bearing canonical base', async () => {
+  const root = await mkdtemp(path.join(tmpdir(), 'gala-root-config-'));
+  await writeFile(path.join(root, 'site.config.yml'), `schemaVersion: 1
+site:
+  id: unavailable
+hosting: {}
+`);
+  await writeRegisteredSiteConfiguration(root, {
+    siteId: '01K00000000000000000000000',
+    canonicalBaseUrl: 'https://example.com',
+    pathPrefix: '',
+    topology: 'provider-default'
+  });
+  const config = parse(await readFile(path.join(root, 'site.config.yml'), 'utf8'));
+  assert.equal(config.hosting.pathPrefix, '/');
+  await assert.rejects(writeRegisteredSiteConfiguration(root, {
+    siteId: '01K00000000000000000000000',
+    canonicalBaseUrl: 'https://example.com/blog',
+    pathPrefix: '/blog',
+    topology: 'provider-default'
+  }), /pathPrefix/);
 });
