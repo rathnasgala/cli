@@ -100,6 +100,7 @@ site:
   timezone: UTC
 hosting:
   canonicalBaseUrl: https://example.com
+  canonicalPolicy: self
   pathPrefix: /
 `);
   for (const language of ['iw', 'he']) {
@@ -195,6 +196,7 @@ site:
   timezone: UTC
 hosting:
   canonicalBaseUrl: https://example.com
+  canonicalPolicy: self
   pathPrefix: /
 `);
 
@@ -224,6 +226,7 @@ site:
   timezone: UTC
 hosting:
   canonicalBaseUrl: https://example.com
+  canonicalPolicy: self
   pathPrefix: /
 `);
   const validDirectory = path.join(root, 'content', 'posts', 'valid');
@@ -331,6 +334,7 @@ site:
   timezone: UTC
 hosting:
   canonicalBaseUrl: https://example.com
+  canonicalPolicy: self
   pathPrefix: /blog
 `);
   const mediaDirectory = path.join(root, 'content', 'posts', 'example', 'media');
@@ -456,6 +460,7 @@ site:
   timezone: UTC
 hosting:
   canonicalBaseUrl: https://example.com
+  canonicalPolicy: self
   pathPrefix: /
 `);
 
@@ -557,6 +562,7 @@ site:
   timezone: UTC
 hosting:
   canonicalBaseUrl: https://example.com
+  canonicalPolicy: self
   pathPrefix: /notes
 `);
   const posts = path.join(root, 'content', 'posts');
@@ -625,6 +631,7 @@ site:
   timezone: UTC
 hosting:
   canonicalBaseUrl: https://example.com
+  canonicalPolicy: self
   pathPrefix: /
 `);
   await mkdir(path.join(root, '.gala'), { recursive: true });
@@ -694,6 +701,7 @@ site:
   timezone: UTC
 hosting:
   canonicalBaseUrl: https://example.com
+  canonicalPolicy: self
   pathPrefix: /
 `);
   await writeFile(path.join(root, 'content', 'posts', 'example', 'index.fr.md'), `---
