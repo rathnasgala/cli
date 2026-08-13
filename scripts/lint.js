@@ -12,7 +12,11 @@ async function javascriptFiles(root) {
   return nested.flat();
 }
 
-const files = [...await javascriptFiles('src'), ...await javascriptFiles('test')].sort();
+const files = [
+  ...await javascriptFiles('scripts'),
+  ...await javascriptFiles('src'),
+  ...await javascriptFiles('test')
+].sort();
 for (const file of files) {
   const result = spawnSync(process.execPath, ['--check', file], { stdio: 'inherit', shell: false });
   if (result.error) throw result.error;

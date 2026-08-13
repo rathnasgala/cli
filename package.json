@@ -1,6 +1,6 @@
 {
   "name": "@rathnasgala/cli",
-  "version": "0.0.5",
+  "version": "0.0.7",
   "type": "module",
   "files": [
     "src"
@@ -14,7 +14,9 @@
   },
   "scripts": {
     "test": "node --test",
-    "lint": "node scripts/lint.js"
+    "lint": "node scripts/lint.js",
+    "preversion": "npm test && npm run lint",
+    "push": "node scripts/push.js"
   },
   "engines": {
     "node": ">=18"
