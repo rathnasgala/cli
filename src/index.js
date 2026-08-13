@@ -24,7 +24,8 @@ import { scaffoldSite } from './scaffold-site.js';
 const [command, ...args] = process.argv.slice(2);
 const usage = 'Usage: gala <auth|configure|scaffold|validate|new|doctor|hook|preview|publish|record-deployment|upgrade|workflow> [options]';
 
-if (command === 'help' || args.includes('--help') || args.includes('-h')) {
+if (command === 'help' || command === '--help' || command === '-h'
+    || args.includes('--help') || args.includes('-h')) {
   process.stdout.write(`${usage}\n`);
   process.exit(0);
 }
