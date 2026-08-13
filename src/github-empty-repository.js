@@ -45,6 +45,7 @@ export function setRepositoryOrigin({ root, owner, repository, spawnProcess = sp
 
 export function verifyRepositoryOrigin({ root, owner, repository, spawnProcess = spawn }) {
   const expected = `https://github.com/${owner}/${repository}.git`;
+  const expectedPath = `/${owner}/${repository}.git`;
   return new Promise((resolve, reject) => {
     const child = spawnProcess('git', ['-C', root, 'remote', 'get-url', 'origin'], {
       cwd: root, shell: false, stdio: ['ignore', 'pipe', 'inherit']
@@ -56,8 +57,19 @@ export function verifyRepositoryOrigin({ root, owner, repository, spawnProcess =
     child.once('exit', (code, signal) => {
       if (signal) reject(new Error(`Git origin verification terminated by signal ${signal}`));
       else if (code !== 0) reject(new Error(`Git origin verification exited with code ${code}`));
-      else if (output.trim() !== expected) reject(new Error(`Existing checkout origin must be ${expected}`));
-      else resolve(root);
+      else {
+        let origin;
+        try {
+          origin = new URL(output.trim());
+        } catch {
+          reject(new Error(`Existing checkout origin must be ${expected}`));
+          return;
+        }
+        if (origin.protocol !== 'https:' || origin.hostname !== 'github.com' || origin.port !== ''
+            || origin.pathname !== expectedPath || origin.search !== '' || origin.hash !== '') {
+          reject(new Error(`Existing checkout origin must be ${expected}`));
+        } else resolve(root);
+      }
     });
   });
 }

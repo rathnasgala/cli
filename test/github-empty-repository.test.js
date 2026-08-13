@@ -52,8 +52,24 @@ test('accepts only the exact HTTPS origin for a resumed checkout', async () => {
   });
   assert.deepEqual(calls[0].args, ['-C', '/tmp/smoke01', 'remote', 'get-url', 'origin']);
   assert.equal(calls[0].options.shell, false);
+  await verifyRepositoryOrigin({
+    root: '/tmp/smoke01', owner: 'rathnasgala', repository: 'smoke01',
+    spawnProcess: originSpawn('https://operator:secret@github.com/rathnasgala/smoke01.git', [])
+  });
   await assert.rejects(verifyRepositoryOrigin({
     root: '/tmp/smoke01', owner: 'rathnasgala', repository: 'smoke01',
     spawnProcess: originSpawn('https://github.com/rathnasgala/another.git', [])
   }), /origin must be/);
+  for (const unsafeOrigin of [
+    'http://github.com/rathnasgala/smoke01.git',
+    'https://github.com:8443/rathnasgala/smoke01.git',
+    'https://github.com/rathnasgala/smoke01.git?ref=main',
+    'https://github.com/rathnasgala/smoke01.git#main',
+    'https://example.com/rathnasgala/smoke01.git'
+  ]) {
+    await assert.rejects(verifyRepositoryOrigin({
+      root: '/tmp/smoke01', owner: 'rathnasgala', repository: 'smoke01',
+      spawnProcess: originSpawn(unsafeOrigin, [])
+    }), /origin must be/);
+  }
 });
