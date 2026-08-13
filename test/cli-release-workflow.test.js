@@ -3,6 +3,14 @@ import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 
 const workflow = await readFile(new URL('../.github/workflows/release-cli.yml', import.meta.url), 'utf8');
+const packageJson = JSON.parse(
+  await readFile(new URL('../package.json', import.meta.url), 'utf8')
+);
+
+test('CLI package metadata is already canonical before npm publishes it', () => {
+  assert.equal(packageJson.bin.gala, 'src/index.js');
+  assert.equal(packageJson.repository.url, 'git+https://github.com/rathnasgala/cli.git');
+});
 
 test('CLI release uses OIDC, exact tag matching, and no stored registry token', () => {
   assert.match(workflow, /id-token: write/);

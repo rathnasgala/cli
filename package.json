@@ -10,7 +10,7 @@
     "provenance": true
   },
   "bin": {
-    "gala": "./src/index.js"
+    "gala": "src/index.js"
   },
   "scripts": {
     "test": "node --test",
