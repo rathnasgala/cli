@@ -25,16 +25,21 @@ test('orchestrates template, registration, workflow, and one-time secret install
     finalize: async (...input) => calls.push(['finalize', ...input]),
     writeWorkflow: async (input) => calls.push(['workflow', input]),
     installSecret: async (input) => calls.push(['secret', input]),
+    installVariable: async (input) => calls.push(['variable', input]),
     commit: async (root) => calls.push(['commit', root])
   });
 
   assert.deepEqual(calls.map(([name]) => name), [
-    'generate', 'clone', 'configure', 'register', 'finalize', 'workflow', 'secret', 'commit'
+    'generate', 'clone', 'configure', 'register', 'finalize', 'workflow', 'secret', 'variable', 'commit'
   ]);
   assert.equal(calls[3][1].topology, 'PROVIDER_DEFAULT');
   assert.equal(calls[3][1].canonicalBaseUrl, 'https://rathnasgala.github.io/smoke01/');
   assert.match(calls[3][1].idempotencyKey, /^scaffold-[0-9a-f]{64}$/);
   assert.equal(calls[6][1].secretName, 'GALA_SITE_SECRET');
+  assert.deepEqual(calls[7][1], {
+    owner: 'rathnasgala', repository: 'smoke01', accessToken: 'github-token',
+    variableName: 'GALA_API_BASE_URL', variableValue: 'https://api.gala67.com/'
+  });
   assert.equal(result.siteId, '01K00000000000000000000000');
 });
 
@@ -64,7 +69,8 @@ test('adopts only a verified empty repository by repointing the local template c
     setOrigin: async (input) => calls.push(['origin', input]),
     configure: async () => ({ site: { timezone: 'UTC' } }),
     register: async () => ({ siteId: '01K00000000000000000000000', siteSecret: 'secret', canonicalBaseUrl: 'https://rathnasgala.github.io/smoke01/' }),
-    finalize: async () => {}, writeWorkflow: async () => {}, installSecret: async () => {}, commit: async () => {}
+    finalize: async () => {}, writeWorkflow: async () => {}, installSecret: async () => {},
+    installVariable: async () => {}, commit: async () => {}
   });
   assert.deepEqual(calls.map(([name]) => name), ['verify-empty', 'clone', 'origin']);
   assert.equal(calls[1][1].cloneUrl, 'https://github.com/rathnasgala/site-template.git');
@@ -83,7 +89,8 @@ test('resumes only a checkout whose origin matches the requested repository', as
     clone: async () => { throw new Error('must not clone while resuming'); },
     configure: async () => ({ site: { timezone: 'UTC' } }),
     register: async () => ({ siteId: '01K00000000000000000000000', siteSecret: 'secret', canonicalBaseUrl: 'https://rathnasgala.github.io/smoke01/' }),
-    finalize: async () => {}, writeWorkflow: async () => {}, installSecret: async () => {}, commit: async () => {}
+    finalize: async () => {}, writeWorkflow: async () => {}, installSecret: async () => {},
+    installVariable: async () => {}, commit: async () => {}
   });
   assert.deepEqual(calls, [['verify-checkout', {
     root: '/tmp/smoke01', owner: 'rathnasgala', repository: 'smoke01'

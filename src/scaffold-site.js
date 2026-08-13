@@ -6,6 +6,7 @@ import { readGalaCredential } from './gala-credential-store.js';
 import { readGithubCredential } from './github-credential-store.js';
 import { cloneRepository, generateRepositoryFromTemplate } from './github-template-repository.js';
 import { installRepositorySecret } from './github-repository-secret.js';
+import { installRepositoryVariable } from './github-repository-variable.js';
 import { registerSite } from './site-registration-client.js';
 import { writeRegisteredSiteConfiguration } from './site-config-registration.js';
 import { writePublishWorkflow } from './workflow-command.js';
@@ -33,6 +34,7 @@ export async function scaffoldSite({
   generate = generateRepositoryFromTemplate, clone = cloneRepository,
   configure = configureSite, register = registerSite, finalize = writeRegisteredSiteConfiguration,
   writeWorkflow = writePublishWorkflow, installSecret = installRepositorySecret,
+  installVariable = installRepositoryVariable,
   commit = commitScaffold, verifyEmpty = verifyEmptyRepository, setOrigin = setRepositoryOrigin,
   verifyCheckout = verifyRepositoryOrigin
 }) {
@@ -91,6 +93,10 @@ export async function scaffoldSite({
   await installSecret({
     owner: repositoryOwner, repository: repositoryName, accessToken: github.accessToken,
     secretName: 'GALA_SITE_SECRET', secretValue: registration.siteSecret
+  });
+  await installVariable({
+    owner: repositoryOwner, repository: repositoryName, accessToken: github.accessToken,
+    variableName: 'GALA_API_BASE_URL', variableValue: gala.apiBaseUrl
   });
   await commit(root);
   return Object.freeze({ root, fullName: generated.fullName, siteId: registration.siteId });
