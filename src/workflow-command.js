@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { lstat, mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
-const ACTION_REF = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+\/.github\/workflows\/[A-Za-z0-9_.-]+\.ya?ml@v[1-9][0-9]*$/;
+const ACTION_REF = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+\/.github\/workflows\/[A-Za-z0-9_.-]+\.ya?ml@v(?:[1-9][0-9]*|[0-9]+\.[0-9]+\.[0-9]+)$/;
 const BRANCH = /^(?![./])(?!.*\.\.)(?!.*[~^:?*\[\\])[A-Za-z0-9._/-]+(?<![/.])$/;
 
 export function deriveNightlySchedule(siteId) {
@@ -28,7 +28,9 @@ export async function writePublishWorkflow({
   buildMode = 'build-and-deploy'
 }) {
   validateTimezone(timezone);
-  if (!ACTION_REF.test(actionRef)) throw new TypeError('actionRef must pin a reusable workflow to a major version');
+  if (!ACTION_REF.test(actionRef)) {
+    throw new TypeError('actionRef must pin a reusable workflow to a major or immutable semver tag');
+  }
   if (!BRANCH.test(defaultBranch)) throw new TypeError('Invalid default branch');
   if (!['build-only', 'build-and-deploy'].includes(buildMode)) throw new TypeError('Invalid build mode');
 

@@ -75,11 +75,15 @@ if (command === 'auth') {
     return index === -1 ? undefined : args[index + 1];
   };
   const installationId = Number(valueFor('--installation-id'));
+  const topology = valueFor('--topology') ?? 'provider-default';
   const result = await scaffoldSite({
     owner: valueFor('--owner'),
     repository: valueFor('--repository'),
     target: valueFor('--target'),
     githubInstallationId: installationId,
+    topology,
+    canonicalBaseUrl: valueFor('--canonical-base-url'),
+    actionRef: valueFor('--action-ref'),
     siteOptions: parseScaffoldOptions(args),
     buildMode: valueFor('--mode') ?? 'build-and-deploy',
     emptyExistingRepository: args.includes('--empty-existing-repository'),

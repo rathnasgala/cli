@@ -45,6 +45,54 @@ test('orchestrates template, registration, workflow, and one-time secret install
   assert.equal(result.siteId, '01K00000000000000000000000');
 });
 
+test('registers and provisions an explicit custom-domain root without provider-path inference', async () => {
+  const calls = [];
+  await scaffoldSite({
+    owner: 'rathnasgala', repository: 'smoke02', target: '/tmp/smoke02',
+    githubInstallationId: 153144989, resumeExistingCheckout: true,
+    topology: 'custom-domain', canonicalBaseUrl: 'https://SMOKE.gala67.com/',
+    actionRef: 'rathnasgala/publish/.github/workflows/publish.yml@v0.0.4',
+    siteOptions: { timezone: 'UTC' },
+    readGithub: async () => ({ accessToken: 'github-token', scopes: ['repo', 'workflow'] }),
+    readGala: async () => ({ accessToken: 'gala-token', apiBaseUrl: 'https://api.gala67.com' }),
+    verifyCheckout: async ({ root }) => root,
+    configure: async () => ({ site: { timezone: 'UTC' } }),
+    register: async (input) => { calls.push(['register', input]); return {
+      siteId: '01K00000000000000000000000', siteSecret: 'secret',
+      canonicalBaseUrl: 'https://smoke.gala67.com', pathPrefix: '/'
+    }; },
+    finalize: async (...input) => calls.push(['finalize', ...input]),
+    writeWorkflow: async (input) => calls.push(['workflow', input]),
+    installSecret: async () => {}, installVariable: async () => {},
+    commit: async () => '0123456789abcdef0123456789abcdef01234567',
+    provisionPages: async (input) => { calls.push(['pages', input]); return { created: true }; }
+  });
+  assert.equal(calls[0][1].topology, 'CUSTOM_DOMAIN');
+  assert.equal(calls[0][1].canonicalBaseUrl, 'https://smoke.gala67.com');
+  assert.equal(calls[1][2].topology, 'custom-domain');
+  assert.equal(calls[1][2].pathPrefix, '/');
+  assert.equal(calls[2][1].actionRef, 'rathnasgala/publish/.github/workflows/publish.yml@v0.0.4');
+  assert.equal(calls[3][1].customDomain, 'smoke.gala67.com');
+});
+
+test('rejects incomplete or ambiguous topology inputs before reading credentials', async () => {
+  for (const input of [
+    { topology: 'custom-domain' },
+    { topology: 'provider-default', canonicalBaseUrl: 'https://smoke.gala67.com' },
+    { topology: 'unknown' },
+    { topology: 'custom-domain', canonicalBaseUrl: 'https://smoke.gala67.com/blog' }
+  ]) {
+    let credentialRead = false;
+    await assert.rejects(scaffoldSite({
+      owner: 'rathnasgala', repository: 'smoke02', target: '/tmp/smoke02',
+      githubInstallationId: 153144989, siteOptions: {}, ...input,
+      readGithub: async () => { credentialRead = true; return {}; },
+      readGala: async () => { credentialRead = true; return {}; }
+    }), /topology|canonical/i);
+    assert.equal(credentialRead, false);
+  }
+});
+
 test('fails before repository creation when either credential is unavailable', async () => {
   let generated = false;
   await assert.rejects(scaffoldSite({

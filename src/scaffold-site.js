@@ -25,9 +25,30 @@ function providerDefaultBase(owner) {
   return `https://${owner.toLowerCase()}.github.io`;
 }
 
+function registrationLocation(owner, topology, canonicalBaseUrl) {
+  if (topology === 'provider-default') {
+    if (canonicalBaseUrl != null) {
+      throw new TypeError('--canonical-base-url is valid only with --topology custom-domain');
+    }
+    return { topology: 'PROVIDER_DEFAULT', canonicalBaseUrl: providerDefaultBase(owner) };
+  }
+  if (topology !== 'custom-domain') {
+    throw new TypeError('topology must be provider-default or custom-domain');
+  }
+  if (typeof canonicalBaseUrl !== 'string') {
+    throw new TypeError('--canonical-base-url is required with --topology custom-domain');
+  }
+  const canonical = new URL(canonicalBaseUrl);
+  if (canonical.protocol !== 'https:' || canonical.username || canonical.password
+      || canonical.port || canonical.search || canonical.hash || canonical.pathname !== '/') {
+    throw new TypeError('canonicalBaseUrl must be a credential-free HTTPS origin');
+  }
+  return { topology: 'CUSTOM_DOMAIN', canonicalBaseUrl: canonical.origin };
+}
+
 export async function scaffoldSite({
   owner, repository, target, githubInstallationId, siteOptions, emptyExistingRepository = false,
-  resumeExistingCheckout = false,
+  resumeExistingCheckout = false, topology = 'provider-default', canonicalBaseUrl, actionRef,
   buildMode = 'build-and-deploy', templateOwner = 'rathnasgala',
   templateRepository = 'site-template',
   readGithub = readGithubCredential, readGala = readGalaCredential,
@@ -41,6 +62,7 @@ export async function scaffoldSite({
 }) {
   const repositoryOwner = segment(owner, 'owner');
   const repositoryName = segment(repository, 'repository');
+  const location = registrationLocation(repositoryOwner, topology, canonicalBaseUrl);
   if (!Number.isSafeInteger(githubInstallationId) || githubInstallationId <= 0) {
     throw new TypeError('githubInstallationId must be a positive integer');
   }
@@ -76,21 +98,21 @@ export async function scaffoldSite({
     if (emptyExistingRepository) await setOrigin({ root, owner: repositoryOwner, repository: repositoryName });
   }
   const configured = await configure(root, siteOptions ?? {});
-  const canonicalBaseUrl = providerDefaultBase(repositoryOwner);
   const idempotencyKey = `scaffold-${createHash('sha256').update(`${repositoryOwner.toLowerCase()}/${repositoryName.toLowerCase()}`).digest('hex')}`;
   const registration = await register({
     apiBaseUrl: gala.apiBaseUrl, galaAccessToken: gala.accessToken, idempotencyKey,
     githubInstallationId, repositoryOwner, repositoryName,
-    topology: 'PROVIDER_DEFAULT', canonicalBaseUrl
+    topology: location.topology, canonicalBaseUrl: location.canonicalBaseUrl
   });
   await finalize(root, {
     siteId: registration.siteId,
     canonicalBaseUrl: registration.canonicalBaseUrl,
     pathPrefix: registration.pathPrefix,
-    topology: 'provider-default'
+    topology
   });
   await writeWorkflow({
-    root, siteId: registration.siteId, timezone: configured.site.timezone, buildMode
+    root, siteId: registration.siteId, timezone: configured.site.timezone, buildMode,
+    ...(actionRef == null ? {} : { actionRef })
   });
   await installSecret({
     owner: repositoryOwner, repository: repositoryName, accessToken: github.accessToken,
@@ -102,7 +124,8 @@ export async function scaffoldSite({
   });
   const commitSha = await commit(root);
   const pages = buildMode === 'build-and-deploy' ? await provisionPages({
-    owner: repositoryOwner, repository: repositoryName, accessToken: github.accessToken, commitSha
+    owner: repositoryOwner, repository: repositoryName, accessToken: github.accessToken, commitSha,
+    customDomain: location.topology === 'CUSTOM_DOMAIN' ? new URL(location.canonicalBaseUrl).hostname : null
   }) : null;
   return Object.freeze({
     root, fullName: generated.fullName, siteId: registration.siteId, commitSha, pages

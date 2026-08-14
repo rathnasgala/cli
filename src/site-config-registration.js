@@ -6,7 +6,9 @@ export async function writeRegisteredSiteConfiguration(root, {
   siteId, canonicalBaseUrl, pathPrefix, topology
 }) {
   if (!/^[0-7][0-9A-HJKMNP-TV-Z]{25}$/.test(siteId)) throw new TypeError('siteId is invalid');
-  if (topology !== 'provider-default') throw new TypeError('Only provider-default topology is implemented');
+  if (!['provider-default', 'custom-domain'].includes(topology)) {
+    throw new TypeError('topology is invalid');
+  }
   const canonical = new URL(canonicalBaseUrl);
   if (canonical.protocol !== 'https:' || canonical.username || canonical.password || canonical.search
       || canonical.hash || canonical.pathname !== '/') {

@@ -20,7 +20,7 @@ test('parses locale, site, repeated sharing, and social profile options', () => 
     '--author', 'Anand',
     '--language', 'fr-ca',
     '--timezone', 'America/Toronto',
-    '--share-target', 'linkedin',
+    '--share-target', 'x',
     '--share-target', 'email',
     '--social-profile', 'github=https://github.com/example',
     '--social-profile', 'mastodon=https://social.example/@author'
@@ -29,7 +29,7 @@ test('parses locale, site, repeated sharing, and social profile options', () => 
     siteAuthor: 'Anand',
     defaultLanguage: 'fr-ca',
     timezone: 'America/Toronto',
-    shareTargets: ['linkedin', 'email'],
+    shareTargets: ['x', 'email'],
     socialProfiles: [
       'github=https://github.com/example',
       'mastodon=https://social.example/@author'

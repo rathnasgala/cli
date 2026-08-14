@@ -25,6 +25,7 @@ async function json(response, operation) {
 
 export async function provisionGithubPages({
   owner, repository, accessToken, commitSha, fetchImpl = fetch,
+  customDomain = null,
   sleep = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds)),
   pollIntervalMs = 5_000, maxPolls = 120
 }) {
@@ -32,6 +33,10 @@ export async function provisionGithubPages({
   const normalizedRepository = required(repository, 'repository', SEGMENT);
   const token = required(accessToken, 'accessToken');
   const sha = required(commitSha, 'commitSha', SHA);
+  if (customDomain != null && (typeof customDomain !== 'string'
+      || !/^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(customDomain))) {
+    throw new TypeError('customDomain is invalid');
+  }
   if (!Number.isSafeInteger(pollIntervalMs) || pollIntervalMs < 0) {
     throw new TypeError('pollIntervalMs must be a non-negative safe integer');
   }
@@ -69,6 +74,15 @@ export async function provisionGithubPages({
     if (configuration.source?.branch !== 'gh-pages' || configuration.source?.path !== '/') {
       throw new Error('Existing GitHub Pages configuration does not use gh-pages at /');
     }
+    if ((configuration.cname ?? null) !== customDomain) {
+      const updated = await fetchImpl(`${repositoryUrl}/pages`, {
+        method: 'PUT', headers: requestHeaders,
+        body: JSON.stringify({ cname: customDomain, source: { branch: 'gh-pages', path: '/' } })
+      });
+      if (updated.status !== 204) {
+        throw new Error(`GitHub Pages custom-domain update failed with HTTP ${updated.status}`);
+      }
+    }
     return Object.freeze({ created: false, url: configuration.html_url, runUrl: run.html_url });
   }
   if (current.status !== 404) {
@@ -79,5 +93,14 @@ export async function provisionGithubPages({
     body: JSON.stringify({ source: { branch: 'gh-pages', path: '/' } })
   });
   const configuration = await json(created, 'Pages activation');
+  if (customDomain != null) {
+    const updated = await fetchImpl(`${repositoryUrl}/pages`, {
+      method: 'PUT', headers: requestHeaders,
+      body: JSON.stringify({ cname: customDomain, source: { branch: 'gh-pages', path: '/' } })
+    });
+    if (updated.status !== 204) {
+      throw new Error(`GitHub Pages custom-domain update failed with HTTP ${updated.status}`);
+    }
+  }
   return Object.freeze({ created: true, url: configuration.html_url, runUrl: run.html_url });
 }

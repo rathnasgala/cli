@@ -52,3 +52,22 @@ hosting: {}
     topology: 'provider-default'
   }), /pathPrefix/);
 });
+
+test('writes the server-resolved custom-domain root topology', async () => {
+  const root = await mkdtemp(path.join(tmpdir(), 'gala-custom-domain-config-'));
+  await writeFile(path.join(root, 'site.config.yml'), `schemaVersion: 1
+site:
+  id: unavailable
+hosting: {}
+`);
+  await writeRegisteredSiteConfiguration(root, {
+    siteId: '01K00000000000000000000000',
+    canonicalBaseUrl: 'https://smoke.gala67.com',
+    pathPrefix: '/',
+    topology: 'custom-domain'
+  });
+  const config = parse(await readFile(path.join(root, 'site.config.yml'), 'utf8'));
+  assert.equal(config.hosting.topology, 'custom-domain');
+  assert.equal(config.hosting.canonicalBaseUrl, 'https://smoke.gala67.com');
+  assert.equal(config.hosting.pathPrefix, '/');
+});

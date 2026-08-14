@@ -72,7 +72,7 @@ test('writes validated site, locale, sharing, and social profile settings', asyn
     siteAuthor: 'Anand',
     defaultLanguage: 'fr-ca',
     timezone: 'America/Toronto',
-    shareTargets: ['linkedin', 'email', 'linkedin'],
+    shareTargets: ['x', 'email', 'x'],
     socialProfiles: [
       'github=https://github.com/example#ignored',
       'mastodon=https://social.example/@author'
@@ -83,7 +83,7 @@ test('writes validated site, locale, sharing, and social profile settings', asyn
   assert.equal(config.site.author, 'Anand');
   assert.equal(config.site.defaultLanguage, 'fr-CA');
   assert.equal(config.site.timezone, 'America/Toronto');
-  assert.deepEqual(config.sharing.targets, ['linkedin', 'email']);
+  assert.deepEqual(config.sharing.targets, ['x', 'email']);
   assert.deepEqual(config.sharing.socialProfiles, {
     github: 'https://github.com/example',
     mastodon: 'https://social.example/@author'

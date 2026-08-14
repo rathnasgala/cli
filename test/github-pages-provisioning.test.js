@@ -62,6 +62,49 @@ test('accepts an existing matching Pages configuration without mutation', async 
   assert.deepEqual(methods, ['GET', 'GET', 'GET']);
 });
 
+test('sets an explicit custom domain after creating Pages and converges on retry', async () => {
+  const requests = [];
+  const fetchImpl = async (url, options) => {
+    requests.push({ url, options });
+    if (url.includes('/actions/workflows/')) return response({ workflow_runs: [{
+      head_sha: base.commitSha, status: 'completed', conclusion: 'success', html_url: 'run'
+    }] });
+    if (url.endsWith('/branches/gh-pages')) return response({ name: 'gh-pages' });
+    if (url.endsWith('/pages') && options.method === 'GET') return response({}, 404);
+    if (url.endsWith('/pages') && options.method === 'POST') {
+      return response({ html_url: 'https://author.github.io/blog/' }, 201);
+    }
+    if (url.endsWith('/pages') && options.method === 'PUT') return response(null, 204);
+    throw new Error(`Unexpected request ${options.method} ${url}`);
+  };
+  await provisionGithubPages({ ...base, customDomain: 'smoke.gala67.com', fetchImpl });
+  assert.deepEqual(JSON.parse(requests.at(-1).options.body), {
+    cname: 'smoke.gala67.com', source: { branch: 'gh-pages', path: '/' }
+  });
+});
+
+test('updates a mismatched existing custom domain but leaves a matching one untouched', async () => {
+  for (const [existing, expectedMethods] of [
+    [null, ['GET', 'GET', 'GET', 'PUT']],
+    ['smoke.gala67.com', ['GET', 'GET', 'GET']]
+  ]) {
+    const methods = [];
+    await provisionGithubPages({
+      ...base, customDomain: 'smoke.gala67.com',
+      fetchImpl: async (url, options) => {
+        methods.push(options.method);
+        if (url.includes('/actions/workflows/')) return response({ workflow_runs: [{
+          head_sha: base.commitSha, status: 'completed', conclusion: 'success', html_url: 'run'
+        }] });
+        if (url.endsWith('/branches/gh-pages')) return response({ name: 'gh-pages' });
+        if (options.method === 'PUT') return response(null, 204);
+        return response({ source: { branch: 'gh-pages', path: '/' }, cname: existing, html_url: 'site' });
+      }
+    });
+    assert.deepEqual(methods, expectedMethods);
+  }
+});
+
 test('reports the failed matching workflow URL and never activates Pages', async () => {
   await assert.rejects(
     provisionGithubPages({

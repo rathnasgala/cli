@@ -77,6 +77,18 @@ test('defaults the public workflow reference to rathnasgala publish v1', async (
   assert.match(source, /uses: rathnasgala\/publish\/\.github\/workflows\/publish\.yml@v1/);
 });
 
+test('permits an exact immutable semver action reference for canary deployment', async () => {
+  const root = await fixture();
+  await writePublishWorkflow({
+    root,
+    siteId: '01K00000000000000000000000',
+    timezone: 'UTC',
+    actionRef: 'rathnasgala/publish/.github/workflows/publish.yml@v0.0.4'
+  });
+  const workflow = await readFile(path.join(root, '.github/workflows/publish.yml'), 'utf8');
+  assert.match(workflow, /uses: rathnasgala\/publish\/.github\/workflows\/publish.yml@v0\.0\.4/);
+});
+
 test('rejects floating action versions, invalid timezones, and invalid modes', async () => {
   const root = await fixture();
   const valid = {
