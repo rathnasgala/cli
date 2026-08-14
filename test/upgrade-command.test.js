@@ -26,6 +26,10 @@ framework:
   themePackage:
     name: "@rathnasgala/theme"
     version: "0.0.1"
+hosting:
+  canonicalBaseUrl: https://example.com
+  pathPrefix: /
+canonicalPolicy: self
 `);
   await writeFile(path.join(root, '.github', 'workflows', 'publish.yml'), `jobs:
   publish:
@@ -71,7 +75,10 @@ test('resolves a channel, confirms, and atomically updates managed bytes plus th
   assert.equal(result.changed, true);
   assert.deepEqual(result.action, { currentMajor: 1, latestMajor: 2, newerAvailable: true });
   assert.equal(await readFile(path.join(root, 'managed.txt'), 'utf8'), 'new');
-  assert.equal(parse(await readFile(path.join(root, 'site.config.yml'), 'utf8')).framework.themePackage.version, '0.0.2');
+  const config = parse(await readFile(path.join(root, 'site.config.yml'), 'utf8'));
+  assert.equal(config.framework.themePackage.version, '0.0.2');
+  assert.equal(config.hosting.canonicalPolicy, 'self');
+  assert.equal(config.canonicalPolicy, undefined);
 });
 
 test('does not download or mutate when confirmation is declined', async () => {

@@ -16,6 +16,7 @@ site:
 hosting:
   canonicalBaseUrl: https://example.com
   pathPrefix: /
+  canonicalPolicy: self
 `);
   await writeFile(path.join(post, 'index.en.md'), `---\nid: 01K00000000000000000000000\ntitle: Valid\nslug: valid\npublishAfterDate: 2026-06-15\nlanguage: en\nauthor: Author\n---\n${body}\n`);
   return root;

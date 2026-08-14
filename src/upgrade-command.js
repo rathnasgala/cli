@@ -45,6 +45,14 @@ export async function inspectActionUpgrade({ root, fetchImpl = fetch }) {
 export async function upgradeTheme({ root, channel, confirm, fetchImpl = fetch }) {
   const configPath = path.resolve(root, 'site.config.yml');
   const config = parse(await readFile(configPath, 'utf8'));
+  if (config?.canonicalPolicy != null) {
+    if (config.canonicalPolicy !== 'self' || config.hosting == null || Array.isArray(config.hosting)
+        || (config.hosting.canonicalPolicy != null && config.hosting.canonicalPolicy !== 'self')) {
+      throw new TypeError('Legacy canonicalPolicy cannot be migrated safely');
+    }
+    config.hosting.canonicalPolicy = 'self';
+    delete config.canonicalPolicy;
+  }
   const installed = config?.framework?.themePackage?.version;
   const [metadata, action] = await Promise.all([
     registryMetadata(fetchImpl), inspectActionUpgrade({ root, fetchImpl })

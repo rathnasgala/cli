@@ -17,6 +17,7 @@ site:
 hosting:
   canonicalBaseUrl: https://example.com
   pathPrefix: /notes
+  canonicalPolicy: self
 `);
   await writeFile(path.join(directory, 'index.en.md'), `---
 id: 01K00000000000000000000000

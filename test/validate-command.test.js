@@ -123,6 +123,7 @@ Body
   assert.ok(results.every(({ errors }) => errors.includes(
     'duplicate slug-language variant: same (he)'
   )));
+  assert.deepEqual(manifest.statistics, { publicViewCounts: false });
   assert.deepEqual(manifest.posts, []);
 });
 
