@@ -17,9 +17,33 @@ function apiUrl(apiBaseUrl) {
   return new URL('/v1/sites', base).href;
 }
 
+async function authorizeGitHub({ apiBaseUrl, galaAccessToken, githubAccessToken, fetchImpl }) {
+  if (typeof githubAccessToken !== 'string' || githubAccessToken === '') {
+    throw new Error('GitHub authentication is missing; run `gala auth`');
+  }
+  const response = await fetchImpl(new URL('/v1/auth/github/device-authorizations', apiBaseUrl), {
+    method: 'POST',
+    headers: {
+      accept: 'application/json',
+      authorization: `Bearer ${galaAccessToken}`,
+      'content-type': 'application/json'
+    },
+    body: JSON.stringify({ accessToken: githubAccessToken })
+  });
+  if (response.status === 401) {
+    throw new Error('GitHub or Gala authentication expired; run `gala auth` again');
+  }
+  if (response.status !== 200) {
+    throw new Error(`GitHub repository authorization failed with HTTP ${response.status}`);
+  }
+  const payload = await response.json();
+  return required(payload?.authorization, 'GitHub authorization', /^[A-Za-z0-9_-]{43}$/);
+}
+
 export async function registerSite({
   apiBaseUrl = 'https://api.gala67.com',
   galaAccessToken,
+  githubAccessToken,
   idempotencyKey,
   githubInstallationId,
   repositoryOwner,
@@ -31,6 +55,9 @@ export async function registerSite({
   if (typeof galaAccessToken !== 'string' || galaAccessToken === '') {
     throw new Error('Gala authentication is missing; run `gala auth`');
   }
+  const githubAuthorization = await authorizeGitHub({
+    apiBaseUrl, galaAccessToken, githubAccessToken, fetchImpl
+  });
   required(idempotencyKey, 'idempotencyKey', IDEMPOTENCY_KEY);
   required(repositoryOwner, 'repositoryOwner', REPOSITORY_PART);
   required(repositoryName, 'repositoryName', REPOSITORY_PART);
@@ -46,6 +73,7 @@ export async function registerSite({
       accept: 'application/json',
       authorization: `Bearer ${galaAccessToken}`,
       'content-type': 'application/json',
+      'github-authorization': githubAuthorization,
       'idempotency-key': idempotencyKey
     },
     body: JSON.stringify({

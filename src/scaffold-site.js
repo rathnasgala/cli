@@ -5,7 +5,6 @@ import { configureSite } from './configure-site.js';
 import { readGalaCredential } from './gala-credential-store.js';
 import { readGithubCredential } from './github-credential-store.js';
 import { cloneRepository, generateRepositoryFromTemplate } from './github-template-repository.js';
-import { installRepositorySecret } from './github-repository-secret.js';
 import { installRepositoryVariable } from './github-repository-variable.js';
 import { provisionGithubPages } from './github-pages-provisioning.js';
 import { registerSite } from './site-registration-client.js';
@@ -54,7 +53,7 @@ export async function scaffoldSite({
   readGithub = readGithubCredential, readGala = readGalaCredential,
   generate = generateRepositoryFromTemplate, clone = cloneRepository,
   configure = configureSite, register = registerSite, finalize = writeRegisteredSiteConfiguration,
-  writeWorkflow = writePublishWorkflow, installSecret = installRepositorySecret,
+  writeWorkflow = writePublishWorkflow,
   installVariable = installRepositoryVariable,
   provisionPages = provisionGithubPages,
   commit = commitScaffold, verifyEmpty = verifyEmptyRepository, setOrigin = setRepositoryOrigin,
@@ -100,7 +99,8 @@ export async function scaffoldSite({
   const configured = await configure(root, siteOptions ?? {});
   const idempotencyKey = `scaffold-${createHash('sha256').update(`${repositoryOwner.toLowerCase()}/${repositoryName.toLowerCase()}`).digest('hex')}`;
   const registration = await register({
-    apiBaseUrl: gala.apiBaseUrl, galaAccessToken: gala.accessToken, idempotencyKey,
+    apiBaseUrl: gala.apiBaseUrl, galaAccessToken: gala.accessToken,
+    githubAccessToken: github.accessToken, idempotencyKey,
     githubInstallationId, repositoryOwner, repositoryName,
     topology: location.topology, canonicalBaseUrl: location.canonicalBaseUrl
   });
@@ -113,10 +113,6 @@ export async function scaffoldSite({
   await writeWorkflow({
     root, siteId: registration.siteId, timezone: configured.site.timezone, buildMode,
     ...(actionRef == null ? {} : { actionRef })
-  });
-  await installSecret({
-    owner: repositoryOwner, repository: repositoryName, accessToken: github.accessToken,
-    secretName: 'GALA_SITE_SECRET', secretValue: registration.siteSecret
   });
   await installVariable({
     owner: repositoryOwner, repository: repositoryName, accessToken: github.accessToken,
