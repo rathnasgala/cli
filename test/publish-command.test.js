@@ -9,10 +9,20 @@ import { publishSite } from '../src/publish-command.js';
 async function fixture(body = '# Valid') {
   const root = await mkdtemp(path.join(tmpdir(), 'gala-publish-'));
   const post = path.join(root, 'content', 'posts', 'example');
+  await mkdir(path.join(root, '.gala'), { recursive: true });
   await mkdir(post, { recursive: true });
+  await writeFile(path.join(root, '.gala', 'managed-files.json'), JSON.stringify({
+    themePackage: { name: '@rathnasgala/theme', version: '0.0.1', availableDesignThemes: ['editorial'] }
+  }));
   await writeFile(path.join(root, 'site.config.yml'), `schemaVersion: 1
 site:
   timezone: UTC
+design:
+  theme: editorial
+framework:
+  themePackage:
+    name: "@rathnasgala/theme"
+    version: "0.0.1"
 hosting:
   canonicalBaseUrl: https://example.com
   pathPrefix: /

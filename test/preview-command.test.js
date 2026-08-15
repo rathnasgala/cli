@@ -10,10 +10,20 @@ import { previewSite } from '../src/preview-command.js';
 async function fixture(date = '2026-06-15') {
   const root = await mkdtemp(path.join(tmpdir(), 'gala-preview-'));
   const directory = path.join(root, 'content', 'posts', 'post');
+  await mkdir(path.join(root, '.gala'), { recursive: true });
   await mkdir(directory, { recursive: true });
+  await writeFile(path.join(root, '.gala', 'managed-files.json'), JSON.stringify({
+    themePackage: { name: '@rathnasgala/theme', version: '0.0.1', availableDesignThemes: ['editorial'] }
+  }));
   await writeFile(path.join(root, 'site.config.yml'), `schemaVersion: 1
 site:
   timezone: UTC
+design:
+  theme: editorial
+framework:
+  themePackage:
+    name: "@rathnasgala/theme"
+    version: "0.0.1"
 hosting:
   canonicalBaseUrl: https://example.com
   pathPrefix: /notes
@@ -63,6 +73,30 @@ test('does not spawn when validation fails', async () => {
       }
     }),
     /Preview refused/
+  );
+  assert.equal(spawned, false);
+});
+
+test('an injected date does not bypass the managed theme identity check', async () => {
+  const root = await fixture();
+  await writeFile(path.join(root, 'site.config.yml'), `schemaVersion: 1
+site:
+  timezone: UTC
+hosting:
+  canonicalBaseUrl: https://example.com
+  pathPrefix: /notes
+  canonicalPolicy: self
+`);
+  let spawned = false;
+  await assert.rejects(
+    () => previewSite({
+      root,
+      today: '2026-06-15',
+      spawnProcess: () => {
+        spawned = true;
+      }
+    }),
+    /framework\.themePackage must pin @rathnasgala\/theme/
   );
   assert.equal(spawned, false);
 });

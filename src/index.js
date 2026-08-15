@@ -20,9 +20,12 @@ import { createInterface } from 'node:readline/promises';
 import { upgradeTheme } from './upgrade-command.js';
 import { authenticateGithub } from './github-auth-command.js';
 import { scaffoldSite } from './scaffold-site.js';
+import { refreshEngagementSnapshot } from './refresh-command.js';
+import { switchTopology } from './topology-command.js';
+import { acquireAttributionEntitlement } from './entitlement-command.js';
 
 const [command, ...args] = process.argv.slice(2);
-const usage = 'Usage: gala <auth|configure|scaffold|validate|new|doctor|hook|preview|publish|record-deployment|upgrade|workflow> [options]';
+const usage = 'Usage: gala <auth|configure|entitlement|scaffold|topology|validate|new|doctor|hook|preview|publish|record-deployment|refresh|upgrade|workflow> [options]';
 
 if (command === 'help' || command === '--help' || command === '-h'
     || args.includes('--help') || args.includes('-h')) {
@@ -32,7 +35,7 @@ if (command === 'help' || command === '--help' || command === '-h'
 
 const recognizedCommands = new Set([
   'auth', 'configure', 'validate', 'new', 'doctor', 'preview',
-  'workflow', 'publish', 'record-deployment', 'hook', 'upgrade'
+  'workflow', 'publish', 'record-deployment', 'refresh', 'hook', 'upgrade', 'topology', 'entitlement'
 ]);
 function commandRoot() {
   const rootIndex = args.indexOf('--root');
@@ -97,6 +100,27 @@ if (command === 'auth') {
   const options = parseScaffoldOptions(args);
   const config = await configureSite(root, options);
   process.stdout.write(`${JSON.stringify(config.design, null, 2)}\n`);
+} else if (command === 'topology') {
+  const valueFor = (name) => {
+    const index = args.indexOf(name);
+    return index === -1 ? undefined : args[index + 1];
+  };
+  const result = await switchTopology({
+    root: valueFor('--root') ?? process.cwd(),
+    owner: valueFor('--owner'),
+    repository: valueFor('--repository'),
+    canonicalBaseUrl: valueFor('--canonical-base-url'),
+    pathPrefix: valueFor('--path-prefix') ?? '/'
+  });
+  process.stdout.write(`Committed topology ${result.changeId} at ${result.commitSha}.\n`);
+} else if (command === 'entitlement') {
+  const rootIndex = args.indexOf('--root');
+  const result = await acquireAttributionEntitlement({
+    root: rootIndex === -1 ? process.cwd() : args[rootIndex + 1]
+  });
+  process.stdout.write(result.changed
+    ? `Stored the signed attribution entitlement for ${result.siteId}.\n`
+    : `Attribution entitlement for ${result.siteId} is current.\n`);
 } else if (command === 'validate') {
   const todayIndex = args.indexOf('--today');
   const today = todayIndex === -1 ? undefined : args[todayIndex + 1];
@@ -191,6 +215,13 @@ if (command === 'auth') {
     + `of ${result.state.posts.length} article(s).\n`
     + `Recorded state SHA: ${result.recordedStateSha}\n`
   );
+} else if (command === 'refresh') {
+  const rootIndex = args.indexOf('--root');
+  const root = rootIndex === -1 ? process.cwd() : args[rootIndex + 1];
+  const result = await refreshEngagementSnapshot({ root });
+  process.stdout.write(result.changed
+    ? 'Refreshed, committed, and pushed the engagement snapshot.\n'
+    : 'Engagement snapshot is already current.\n');
 } else if (command === 'upgrade') {
   const valueFor = (name) => {
     const index = args.indexOf(name);

@@ -95,6 +95,10 @@ test('skips every language alias that canonicalizes to the same emitted variant'
   const root = await mkdtemp(path.join(tmpdir(), 'gala-validation-'));
   const directory = path.join(root, 'content', 'posts', 'same');
   await mkdir(directory, { recursive: true });
+  await mkdir(path.join(root, '.gala'));
+  await writeFile(path.join(root, '.gala', 'managed-files.json'), JSON.stringify({
+    themePackage: { name: '@rathnasgala/theme', version: '0.0.1', availableDesignThemes: ['editorial'] }
+  }));
   await writeFile(path.join(root, 'site.config.yml'), `schemaVersion: 1
 site:
   timezone: UTC
@@ -102,6 +106,12 @@ hosting:
   canonicalBaseUrl: https://example.com
   canonicalPolicy: self
   pathPrefix: /
+design:
+  theme: editorial
+framework:
+  themePackage:
+    name: "@rathnasgala/theme"
+    version: "0.0.1"
 `);
   for (const language of ['iw', 'he']) {
     await writeFile(path.join(directory, `index.${language}.md`), `---
@@ -124,6 +134,11 @@ Body
     'duplicate slug-language variant: same (he)'
   )));
   assert.deepEqual(manifest.statistics, { publicViewCounts: false });
+  assert.deepEqual(manifest.contact, {
+    enabled: false,
+    websiteEnabled: false,
+    phoneEnabled: false
+  });
   assert.deepEqual(manifest.posts, []);
 });
 
@@ -199,6 +214,12 @@ hosting:
   canonicalBaseUrl: https://example.com
   canonicalPolicy: self
   pathPrefix: /
+design:
+  theme: editorial
+framework:
+  themePackage:
+    name: "@rathnasgala/theme"
+    version: "0.0.1"
 `);
 
   const { results, manifest } = await regenerateBuildManifest({
@@ -229,6 +250,12 @@ hosting:
   canonicalBaseUrl: https://example.com
   canonicalPolicy: self
   pathPrefix: /
+design:
+  theme: editorial
+framework:
+  themePackage:
+    name: "@rathnasgala/theme"
+    version: "0.0.1"
 `);
   const validDirectory = path.join(root, 'content', 'posts', 'valid');
   await mkdir(validDirectory, { recursive: true });
@@ -337,6 +364,12 @@ hosting:
   canonicalBaseUrl: https://example.com
   canonicalPolicy: self
   pathPrefix: /blog
+design:
+  theme: editorial
+framework:
+  themePackage:
+    name: "@rathnasgala/theme"
+    version: "0.0.1"
 `);
   const mediaDirectory = path.join(root, 'content', 'posts', 'example', 'media');
   await mkdir(mediaDirectory, { recursive: true });
@@ -463,6 +496,12 @@ hosting:
   canonicalBaseUrl: https://example.com
   canonicalPolicy: self
   pathPrefix: /
+design:
+  theme: editorial
+framework:
+  themePackage:
+    name: "@rathnasgala/theme"
+    version: "0.0.1"
 `);
 
   const { results, manifest } = await regenerateBuildManifest({ root, today: '2026-06-15' });
@@ -565,6 +604,12 @@ hosting:
   canonicalBaseUrl: https://example.com
   canonicalPolicy: self
   pathPrefix: /notes
+design:
+  theme: editorial
+framework:
+  themePackage:
+    name: "@rathnasgala/theme"
+    version: "0.0.1"
 `);
   const posts = path.join(root, 'content', 'posts');
   await mkdir(path.join(posts, 'future'));
@@ -634,6 +679,12 @@ hosting:
   canonicalBaseUrl: https://example.com
   canonicalPolicy: self
   pathPrefix: /
+design:
+  theme: editorial
+framework:
+  themePackage:
+    name: "@rathnasgala/theme"
+    version: "0.0.1"
 `);
   await mkdir(path.join(root, '.gala'), { recursive: true });
   await writeFile(path.join(root, '.gala', 'publication-state.yml'), `schemaVersion: 1
@@ -704,6 +755,12 @@ hosting:
   canonicalBaseUrl: https://example.com
   canonicalPolicy: self
   pathPrefix: /
+design:
+  theme: editorial
+framework:
+  themePackage:
+    name: "@rathnasgala/theme"
+    version: "0.0.1"
 `);
   await writeFile(path.join(root, 'content', 'posts', 'example', 'index.fr.md'), `---
 id: 01K00000000000000000000000

@@ -23,7 +23,8 @@ async function fixture() {
 test('applies high-level design options while preserving other configuration', async () => {
   const root = await fixture();
   const config = await configureSite(root, {
-    theme: 'portfolio',
+    theme: 'editorial',
+    layout: 'portfolio',
     palette: 'ocean',
     typography: 'humanist',
     spacing: 'compact',
@@ -34,10 +35,24 @@ test('applies high-level design options while preserving other configuration', a
   });
 
   assert.equal(config.site.name, 'Preserved');
-  assert.equal(config.design.theme, 'portfolio');
+  assert.equal(config.design.theme, 'editorial');
+  assert.equal(config.design.layout, 'portfolio');
   assert.equal(config.design.palette, 'ocean');
   assert.match(await readFile(path.join(root, 'site.config.yml'), 'utf8'), /# Managed configuration boundary\./);
   assert.equal(await readFile(path.join(root, 'custom.css'), 'utf8'), 'author override');
+});
+
+test('rejects unimplemented layout and palette identities without rewriting configuration', async () => {
+  for (const [options, expected] of [
+    [{ layout: 'magazine' }, /Unsupported design layout/],
+    [{ palette: 'sunset' }, /Unsupported design palette/]
+  ]) {
+    const root = await fixture();
+    const target = path.join(root, 'site.config.yml');
+    const before = await readFile(target, 'utf8');
+    await assert.rejects(() => configureSite(root, options), expected);
+    assert.equal(await readFile(target, 'utf8'), before);
+  }
 });
 
 test('an option-free resume validates without rewriting configuration bytes', async () => {

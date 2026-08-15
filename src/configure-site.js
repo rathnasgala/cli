@@ -5,6 +5,11 @@ import { parseDocument } from 'yaml';
 
 import { scaffoldOptionNames } from './scaffold-options.js';
 
+const IMPLEMENTED_DESIGN_VALUES = Object.freeze({
+  layout: Object.freeze(['article-first', 'portfolio']),
+  palette: Object.freeze(['default', 'ocean'])
+});
+
 function nonEmptyString(value, field) {
   if (typeof value !== 'string' || value.trim() === '') {
     throw new TypeError(`${field} must be a non-empty string`);
@@ -46,6 +51,9 @@ export async function configureSite(root, designOptions) {
   for (const [name, value] of Object.entries(designOptions)) {
     if (scaffoldOptionNames.includes(name)) {
       config.design[name] = nonEmptyString(value, `Design option ${name}`);
+      if (IMPLEMENTED_DESIGN_VALUES[name]?.includes(config.design[name]) === false) {
+        throw new TypeError(`Unsupported design ${name}: ${config.design[name]}`);
+      }
       document.setIn(['design', name], config.design[name]);
     }
   }
