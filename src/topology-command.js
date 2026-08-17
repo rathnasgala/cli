@@ -40,7 +40,9 @@ export async function switchTopology({
   const pending = await prepare({
     apiBaseUrl: gala.apiBaseUrl, accessToken: gala.accessToken, siteId, canonicalBaseUrl, pathPrefix
   });
-  const topology = pending.cname == null
+  // A site served under a path holds no domain of its own — GitHub lends it the one on the
+  // owner's main site — so the absence of a cname no longer means the provider address.
+  const topology = pending.canonicalBaseUrl === `https://${owner.toLowerCase()}.github.io`
     ? 'provider-default' : (pending.pathPrefix === '/' ? 'domain-root' : 'domain-subpath');
   await writeRegisteredSiteConfiguration(siteRoot, {
     siteId, canonicalBaseUrl: pending.canonicalBaseUrl,
