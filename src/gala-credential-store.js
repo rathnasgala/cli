@@ -102,3 +102,14 @@ export async function readGalaCredential({ target = galaCredentialPath(), now = 
     expiresAt
   });
 }
+
+/**
+ * Removes a credential the server no longer accepts.
+ *
+ * Leaving a refused token on disk means every later command rediscovers that it is refused, and
+ * `readGalaCredential` cannot tell the difference — the file is well-formed and unexpired. Deleting
+ * it is what makes the next run ask for a sign-in instead of failing again.
+ */
+export async function forgetGalaCredential({ target = galaCredentialPath() } = {}) {
+  await rm(target, { force: true });
+}

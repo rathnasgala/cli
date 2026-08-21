@@ -28,6 +28,20 @@ export async function exchangeGithubAuthorization({
     },
     body: JSON.stringify({ accessToken: githubAccessToken })
   });
+  if (response.status === 409) {
+    // The API distinguishes "the App is not installed on this account" from "your credential is
+    // finished". Only the first is something the writer can fix in a browser, so it is signalled
+    // rather than thrown: the caller offers the installation page and waits.
+    return null;
+  }
+  if (response.status === 401) {
+    // Either credential can be the one at fault and the caller cannot tell them apart, so say so
+    // rather than printing a status code the writer has no way to interpret.
+    throw new Error(
+      'Gala refused the GitHub authorization. Run `npx --yes @rathnasgala/cli@latest auth` and '
+      + '`auth github` again, then retry.'
+    );
+  }
   if (!response.ok) {
     throw new Error(`GitHub authorization exchange failed with HTTP ${response.status}`);
   }
@@ -64,6 +78,8 @@ export async function resolveInstallationId({
   const authorization = await exchange({
     apiBaseUrl, galaAccessToken, githubAccessToken, fetchImpl
   });
+  // null means the App is not installed yet, which the caller turns into an instruction.
+  if (authorization == null) return null;
   const repositories = await list({ apiBaseUrl, authorization, fetchImpl });
   const wanted = String(owner).toLowerCase();
   for (const repository of repositories) {

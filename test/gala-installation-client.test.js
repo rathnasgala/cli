@@ -92,13 +92,22 @@ test('ignores entries whose installationId is not a usable positive integer', as
   assert.equal(installationId, 153144989);
 });
 
-test('reports the status when the API refuses either call', async () => {
+test('turns a refused authorization into an instruction, not a status code', async () => {
+  // 401 here means one of the two credentials is finished, and the caller cannot tell which. A
+  // bare "HTTP 401" leaves the writer with nothing to do about it.
   await assert.rejects(
     exchangeGithubAuthorization({
       apiBaseUrl: 'https://api.gala67.com', galaAccessToken: 'g', githubAccessToken: 'h',
       fetchImpl: async () => ({ ok: false, status: 401, json: async () => ({}) })
     }),
-    /HTTP 401/
+    /auth github/
+  );
+  await assert.rejects(
+    exchangeGithubAuthorization({
+      apiBaseUrl: 'https://api.gala67.com', galaAccessToken: 'g', githubAccessToken: 'h',
+      fetchImpl: async () => ({ ok: false, status: 500, json: async () => ({}) })
+    }),
+    /HTTP 500/
   );
   await assert.rejects(
     listAuthorizedRepositories({
@@ -107,4 +116,29 @@ test('reports the status when the API refuses either call', async () => {
     }),
     /HTTP 503/
   );
+});
+
+test('signals a missing App installation instead of throwing, so the caller can offer the fix', async () => {
+  // The API answers 409 GITHUB_APP_NOT_INSTALLED when the writer's token is valid but the Gala
+  // GitHub App covers no account of theirs. That is a browser step, not a failure.
+  const authorization = await exchangeGithubAuthorization({
+    apiBaseUrl: 'https://api.gala67.com',
+    galaAccessToken: 'gala-token',
+    githubAccessToken: 'github-token',
+    fetchImpl: async () => ({
+      ok: false, status: 409,
+      json: async () => ({ code: 'GITHUB_APP_NOT_INSTALLED' })
+    })
+  });
+  assert.equal(authorization, null);
+
+  const installationId = await resolveInstallationId({
+    apiBaseUrl: 'https://api.gala67.com',
+    galaAccessToken: 'gala-token',
+    githubAccessToken: 'github-token',
+    owner: 'ada',
+    exchange: async () => null,
+    list: async () => assert.fail('the repository list must not be requested without a capability')
+  });
+  assert.equal(installationId, null);
 });

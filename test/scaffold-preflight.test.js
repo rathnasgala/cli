@@ -13,6 +13,8 @@ function stubs(overrides = {}) {
     readGithub: async () => github,
     resolveLogin: async () => 'rathnasgala',
     resolveInstallation: async () => 153144989,
+    credentialAccepted: async () => true,
+    forgetGala: async () => {},
     ...overrides
   };
 }
@@ -184,4 +186,44 @@ test('slugifies site names the way GitHub accepts repository names', () => {
   assert.equal(repositoryNameFrom('***'), null);
   assert.equal(repositoryNameFrom(''), null);
   assert.equal(repositoryNameFrom(undefined), null);
+});
+
+test('re-authenticates when the stored credential parses and has not expired but the server refuses it', async () => {
+  // The exact shape of the failure this replaces: the API stopped issuing `tenant` claims and now
+  // rejects tokens that carry one, while the file itself stays well-formed and unexpired for weeks.
+  const order = [];
+  let dead = true;
+
+  const prepared = await prepareScaffold({
+    repository: 'field-notes',
+    notify: (message) => order.push(['notify', message]),
+    readGala: async () => ({
+      accessToken: dead ? 'legacy-token' : 'fresh-token',
+      apiBaseUrl: 'https://api.gala67.com'
+    }),
+    credentialAccepted: async ({ accessToken }) => accessToken !== 'legacy-token',
+    forgetGala: async () => order.push(['forget']),
+    signInGala: async () => { order.push(['sign-in']); dead = false; },
+    readGithub: async () => github,
+    resolveLogin: async () => 'rathnasgala',
+    resolveInstallation: async () => 153144989
+  });
+
+  assert.equal(prepared.owner, 'rathnasgala');
+  // Deleted before signing in: leaving a refused token on disk makes every later command
+  // rediscover that it is refused.
+  assert.deepEqual(order.filter(([kind]) => kind !== 'notify').map(([kind]) => kind),
+    ['forget', 'sign-in']);
+  assert.ok(order.some(([, message]) => String(message).includes('no longer valid')));
+});
+
+test('does not sign in again when the server still accepts the stored credential', async () => {
+  await prepareScaffold({
+    repository: 'field-notes',
+    ...stubs({
+      credentialAccepted: async () => true,
+      forgetGala: async () => assert.fail('an accepted credential must not be deleted'),
+      signInGala: async () => assert.fail('an accepted credential must not trigger a sign-in')
+    })
+  });
 });

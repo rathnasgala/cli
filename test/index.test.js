@@ -94,3 +94,24 @@ sharing:
 
   assert.match(stderr, /warning\trepository-size-500mb/);
 });
+
+test('a failed command reports one actionable line, with the stack behind GALA_DEBUG', async () => {
+  const entry = fileURLToPath(new URL('../src/index.js', import.meta.url));
+  const missing = path.join(tmpdir(), 'gala-cli-absent-' + Date.now());
+
+  const plain = await execute(process.execPath, [entry, 'validate', missing]).then(
+    () => assert.fail('the command must fail'),
+    (failure) => failure
+  );
+  assert.equal(plain.code, 1);
+  // The default output is the message and nothing else: no "at ..." frames through node_modules,
+  // which is what a rejected top-level await prints if nothing catches it.
+  assert.doesNotMatch(plain.stderr, /\n\s+at /);
+  assert.match(plain.stderr, /no such file or directory/);
+
+  const debugged = await execute(process.execPath, [entry, 'validate', missing], {
+    env: { ...process.env, GALA_DEBUG: '1' }
+  }).then(() => assert.fail('the command must fail'), (failure) => failure);
+  assert.equal(debugged.code, 1);
+  assert.match(debugged.stderr, /\n\s+at /);
+});

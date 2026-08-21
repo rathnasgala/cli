@@ -25,6 +25,25 @@ import { refreshEngagementSnapshot } from './refresh-command.js';
 import { switchTopology } from './topology-command.js';
 import { acquireAttributionEntitlement } from './entitlement-command.js';
 
+/*
+ * A failed command should say what went wrong and what to do about it. Node's default for a
+ * rejected top-level await is a stack trace through node_modules, which tells a writer nothing and
+ * buries the one line that matters. The stack is still available behind GALA_DEBUG for anyone
+ * debugging the CLI itself.
+ */
+process.on('uncaughtException', reportAndExit);
+process.on('unhandledRejection', reportAndExit);
+
+function reportAndExit(failure) {
+  if (process.env.GALA_DEBUG) {
+    process.stderr.write(`${failure instanceof Error ? failure.stack : String(failure)}\n`);
+  } else {
+    const message = failure instanceof Error ? failure.message : String(failure);
+    process.stderr.write(`${message}\n`);
+  }
+  process.exit(1);
+}
+
 const [command, ...args] = process.argv.slice(2);
 const usage = 'Usage: gala <auth|configure|entitlement|scaffold|topology|validate|new|doctor|hook|preview|publish|record-deployment|refresh|upgrade|workflow> [options]';
 

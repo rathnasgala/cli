@@ -6,6 +6,8 @@ import { readGalaCredential } from './gala-credential-store.js';
 import { readGithubCredential } from './github-credential-store.js';
 import { resolveGithubLogin } from './github-identity.js';
 import { resolveInstallationId } from './gala-installation-client.js';
+import { galaCredentialAccepted } from './gala-credential-health.js';
+import { forgetGalaCredential } from './gala-credential-store.js';
 
 export const GITHUB_APP_INSTALL_URL = 'https://github.com/apps/gala67-app/installations/new';
 
@@ -37,13 +39,17 @@ export async function prepareScaffold({
   installAttempts = 3,
   readGala = readGalaCredential,
   readGithub = readGithubCredential,
+  credentialAccepted = galaCredentialAccepted,
+  forgetGala = forgetGalaCredential,
   signInGala = authenticateGala,
   signInGithub = authenticateGithub,
   resolveLogin = resolveGithubLogin,
   resolveInstallation = resolveInstallationId,
   apiBaseUrl = DEFAULT_API_BASE_URL
 } = {}) {
-  const gala = await ensureGala({ apiBaseUrl, notify, readGala, signInGala });
+  const gala = await ensureGala({
+    apiBaseUrl, notify, readGala, signInGala, credentialAccepted, forgetGala
+  });
   const github = await ensureGithub({ notify, readGithub, signInGithub });
 
   const resolvedOwner = owner ?? await resolveLogin({ accessToken: github.accessToken });
@@ -74,19 +80,39 @@ export async function prepareScaffold({
   });
 }
 
-/** A missing or expired credential is a step to take, not an error to report. */
-async function ensureGala({ apiBaseUrl, notify, readGala, signInGala }) {
+/**
+ * A missing, expired or refused credential is a step to take, not an error to report.
+ *
+ * The stored file is checked against the server before anything depends on it, because a
+ * credential that parses and has not expired can still be one the API refuses — and finding that
+ * out four calls later, as an opaque 401 from whichever endpoint got there first, is how a
+ * "sign in again" turned into a stack trace.
+ */
+async function ensureGala({ apiBaseUrl, notify, readGala, signInGala, credentialAccepted, forgetGala }) {
+  let stored = null;
   try {
-    return await readGala();
+    stored = await readGala();
   } catch {
-    notify('Signing in to Gala.');
-    await signInGala({
-      apiBaseUrl,
-      showInstructions: ({ verificationUri, userCode }) =>
-        notify(`Open ${verificationUri}\nEnter code: ${userCode}`)
-    });
-    return readGala();
+    stored = null;
   }
+
+  if (stored != null) {
+    const base = stored.apiBaseUrl ?? apiBaseUrl;
+    if (await credentialAccepted({ apiBaseUrl: base, accessToken: stored.accessToken })) {
+      return stored;
+    }
+    // Leaving it on disk would make every later command repeat this discovery.
+    await forgetGala();
+    notify('Your Gala sign-in is no longer valid.');
+  }
+
+  notify('Signing in to Gala.');
+  await signInGala({
+    apiBaseUrl,
+    showInstructions: ({ verificationUri, userCode }) =>
+      notify(`Open ${verificationUri}\nEnter code: ${userCode}`)
+  });
+  return readGala();
 }
 
 async function ensureGithub({ notify, readGithub, signInGithub }) {
