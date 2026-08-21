@@ -9,7 +9,7 @@ The quick start below begins with the required accounts and tools and does not a
 - [Git](https://git-scm.com/downloads)
 - [Node.js 24](https://nodejs.org/en/download) recommended; the CLI package supports Node.js 18 or newer
 - A [GitHub account](https://github.com/signup)
-- The [Gala GitHub App](https://github.com/apps/gala67-app/installations/new) installed for the account that will own the publication
+- The [Gala GitHub App](https://github.com/apps/gala67-app/installations/new) — `scaffold` walks you through installing it if it is not already
 
 Check your local tools:
 
@@ -28,42 +28,47 @@ git version 2.50.1 (Apple Git-155)
 
 ## Quick start
 
-### 1. Authenticate with Gala
+One command, run inside an empty folder named after the publication you want:
 
 ```console
-npx --yes @rathnasgala/cli@latest auth
+mkdir field-notes && cd field-notes
+npx --yes @rathnasgala/cli@latest scaffold --target ./ --mode build-and-deploy
 ```
 
-The CLI displays a short code and opens the platform authorization page. The resulting Gala token is stored in your operating system's application-config directory, never in the publication repository.
+That single command does all of the following, and asks only for what it cannot work out:
 
-### 2. Authenticate with GitHub
+1. **Signs you in to Gala** if no valid token is stored, showing a code to enter in the browser.
+2. **Signs you in to GitHub** the same way, requesting `repo` to create the publication and install
+   its Actions secret, and `workflow` for the initial scaffold. Ordinary publishing needs neither.
+3. **Reads your GitHub account** from that token, so there is no username to type.
+4. **Finds the Gala GitHub App installation** for your account. If the App is not installed yet it
+   prints the installation page, waits while you install it, and carries on — the installation ID
+   is never something you have to read out of a URL.
+5. **Names the publication** after the folder you are standing in.
+6. **Creates the repository** from the site template, registers it, installs its one-time secret,
+   writes the publication workflow, commits, and enables GitHub Pages.
+
+Both sign-ins are skipped when a valid credential is already stored, so re-running is cheap.
+
+After scaffolding succeeds, open [GitHub App settings](https://github.com/settings/installations)
+and restrict the App to the publication repository if you installed it against all of them.
+
+### Write, preview, and publish
 
 ```console
-npx --yes @rathnasgala/cli@latest auth github
+npx --yes @rathnasgala/cli@latest new --title "My first post" --language en
+npx --yes @rathnasgala/cli@latest preview
+npx --yes @rathnasgala/cli@latest publish
 ```
 
-GitHub OAuth Apps cannot restrict `repo` access to one repository. The CLI therefore requests:
+`new` prints the Markdown file it created. Write below the second `---` line, save the file,
+preview it locally, then publish it through GitHub.
 
-- `repo` to create the publication repository and install its Actions secret
-- `workflow` for initial scaffolding and explicit Action-major migrations
+### Overriding what scaffold works out
 
-The GitHub token is stored outside the repository with private file permissions. Gala does not require `workflow` for ordinary publishing or patch upgrades.
-
-### 3. Install the GitHub App
-
-Open the [Gala GitHub App installation page](https://github.com/apps/gala67-app/installations/new). For a new publication, select **All repositories** temporarily because the target repository does not exist yet.
-
-After installation, GitHub redirects to a URL ending in a number, for example:
-
-```text
-https://github.com/settings/installations/153144989
-```
-
-That final number is the installation ID required by `scaffold`.
-
-### 4. Scaffold the publication
-
-Replace every capitalized placeholder:
+Every derived value is still an explicit flag, for the cases where the default is wrong — a
+publication owned by an organisation, a folder named differently from the repository, or more than
+one App installation on the account:
 
 ```console
 npx --yes @rathnasgala/cli@latest scaffold \
@@ -74,20 +79,9 @@ npx --yes @rathnasgala/cli@latest scaffold \
   --mode build-and-deploy
 ```
 
-Scaffolding creates a public repository from `rathnasgala/site-template`, registers the site, installs the one-time site secret as a GitHub Actions secret, writes the publication workflow, commits the generated configuration, and enables GitHub Pages.
-
-After scaffolding succeeds, open [GitHub App settings](https://github.com/settings/installations) and restrict the App to the publication repository.
-
-### 5. Write, preview, and publish
-
-```console
-cd YOUR_REPOSITORY_NAME
-npx --yes @rathnasgala/cli@latest new --title "My first post" --language en
-npx --yes @rathnasgala/cli@latest preview
-npx --yes @rathnasgala/cli@latest publish
-```
-
-`new` prints the Markdown file it created. Write below the second `---` line, save the file, preview it locally, then publish it through GitHub.
+`--repository` is otherwise taken from `--target`, then from `--site-name`, and only then asked
+for. Outside a terminal — in CI — nothing is ever prompted for: a value that cannot be derived is
+an error, so an automated run fails fast instead of waiting for an answer that will not come.
 
 ## Command reference
 
@@ -103,7 +97,7 @@ Inside the table below, `gala` is shorthand for that prefix.
 | --- | --- | --- |
 | `gala auth` | Authenticate the author with Gala | `--api-base-url URL` for a non-production API |
 | `gala auth github` | Authenticate the CLI with GitHub | Browser device flow; requests `repo workflow` |
-| `gala scaffold` | Create and register a publication | `--owner`, `--repository`, `--target`, `--installation-id`, `--mode` |
+| `gala scaffold` | Sign in if needed, then create and register a publication | All derived; override with `--owner`, `--repository`, `--target`, `--installation-id`, `--mode` |
 | `gala configure` | Update author-owned site and design settings | `--root`, plus the configuration options below |
 | `gala new` | Create a Markdown post variant | `--root`, `--title`, `--language`, `--today` |
 | `gala validate` | Validate repository content without publishing | optional root path, `--today` |
@@ -148,10 +142,7 @@ Use this only when the exact GitHub repository already exists and has no branche
 
 ```console
 npx --yes @rathnasgala/cli@latest scaffold \
-  --owner YOUR_GITHUB_USERNAME \
   --repository YOUR_REPOSITORY_NAME \
-  --target ./YOUR_REPOSITORY_NAME \
-  --installation-id YOUR_INSTALLATION_ID \
   --empty-existing-repository
 ```
 
@@ -161,10 +152,8 @@ The target must already be a checkout whose HTTPS origin exactly matches the req
 
 ```console
 npx --yes @rathnasgala/cli@latest scaffold \
-  --owner YOUR_GITHUB_USERNAME \
   --repository YOUR_REPOSITORY_NAME \
   --target ./YOUR_REPOSITORY_NAME \
-  --installation-id YOUR_INSTALLATION_ID \
   --resume
 ```
 
@@ -237,9 +226,12 @@ Gala author tokens expire and do not use a refresh token. Run:
 npx --yes @rathnasgala/cli@latest auth
 ```
 
-### `githubInstallationId must be a positive integer`
+### `The Gala GitHub App is not installed on YOUR_ACCOUNT`
 
-Open [GitHub App settings](https://github.com/settings/installations), select Gala, and copy the number at the end of the browser URL.
+`scaffold` could not find an installation covering that account. At a terminal it prints the
+installation page and waits; in CI it stops, because there is nobody to install it. Install the App
+at [the installation page](https://github.com/apps/gala67-app/installations/new) and run `scaffold`
+again, or pass `--installation-id` explicitly.
 
 ### The App cannot access the new repository
 

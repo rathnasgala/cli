@@ -20,6 +20,7 @@ import { createInterface } from 'node:readline/promises';
 import { upgradeTheme } from './upgrade-command.js';
 import { authenticateGithub } from './github-auth-command.js';
 import { scaffoldSite } from './scaffold-site.js';
+import { prepareScaffold } from './scaffold-preflight.js';
 import { refreshEngagementSnapshot } from './refresh-command.js';
 import { switchTopology } from './topology-command.js';
 import { acquireAttributionEntitlement } from './entitlement-command.js';
@@ -77,17 +78,37 @@ if (command === 'auth') {
     const index = args.indexOf(name);
     return index === -1 ? undefined : args[index + 1];
   };
-  const installationId = Number(valueFor('--installation-id'));
+  const explicitInstallationId = valueFor('--installation-id');
   const topology = valueFor('--topology') ?? 'provider-default';
-  const result = await scaffoldSite({
+  const siteOptions = parseScaffoldOptions(args);
+  // Prompting only makes sense at a terminal. In CI there is nobody to answer, so a missing value
+  // has to stay a clear error rather than a process that hangs waiting for enter.
+  const interactive = process.stdin.isTTY === true;
+  const ask = interactive
+    ? async (question) => {
+      const terminal = createInterface({ input: process.stdin, output: process.stdout });
+      try { return await terminal.question(question); } finally { terminal.close(); }
+    }
+    : undefined;
+  const prepared = await prepareScaffold({
     owner: valueFor('--owner'),
     repository: valueFor('--repository'),
     target: valueFor('--target'),
-    githubInstallationId: installationId,
+    githubInstallationId: explicitInstallationId == null ? undefined : Number(explicitInstallationId),
+    siteName: siteOptions.siteName,
+    apiBaseUrl: valueFor('--api-base-url') ?? 'https://api.gala67.com',
+    notify: (message) => process.stdout.write(`${message}\n`),
+    ask
+  });
+  const result = await scaffoldSite({
+    owner: prepared.owner,
+    repository: prepared.repository,
+    target: prepared.target,
+    githubInstallationId: prepared.githubInstallationId,
     topology,
     canonicalBaseUrl: valueFor('--canonical-base-url'),
     actionRef: valueFor('--action-ref'),
-    siteOptions: parseScaffoldOptions(args),
+    siteOptions,
     buildMode: valueFor('--mode') ?? 'build-and-deploy',
     emptyExistingRepository: args.includes('--empty-existing-repository'),
     resumeExistingCheckout: args.includes('--resume')
