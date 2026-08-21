@@ -7,6 +7,7 @@ import { readGithubCredential } from './github-credential-store.js';
 import { resolveGithubLogin } from './github-identity.js';
 import { resolveInstallationId } from './gala-installation-client.js';
 import { galaCredentialAccepted } from './gala-credential-health.js';
+import { openInBrowser } from './open-browser.js';
 import { forgetGalaCredential } from './gala-credential-store.js';
 
 export const GITHUB_APP_INSTALL_URL = 'https://github.com/apps/gala67-app/installations/new';
@@ -37,6 +38,7 @@ export async function prepareScaffold({
   ask,
   installUrl = GITHUB_APP_INSTALL_URL,
   installAttempts = 3,
+  openUrl = openInBrowser,
   readGala = readGalaCredential,
   readGithub = readGithubCredential,
   credentialAccepted = galaCredentialAccepted,
@@ -48,9 +50,9 @@ export async function prepareScaffold({
   apiBaseUrl = DEFAULT_API_BASE_URL
 } = {}) {
   const gala = await ensureGala({
-    apiBaseUrl, notify, readGala, signInGala, credentialAccepted, forgetGala
+    apiBaseUrl, notify, readGala, signInGala, credentialAccepted, forgetGala, openUrl
   });
-  const github = await ensureGithub({ notify, readGithub, signInGithub });
+  const github = await ensureGithub({ notify, readGithub, signInGithub, openUrl });
 
   const resolvedOwner = owner ?? await resolveLogin({ accessToken: github.accessToken });
 
@@ -69,7 +71,7 @@ export async function prepareScaffold({
       galaAccessToken: gala.accessToken,
       githubAccessToken: github.accessToken,
       owner: resolvedOwner,
-      notify, ask, installUrl, installAttempts, resolveInstallation
+      notify, ask, installUrl, installAttempts, resolveInstallation, openUrl
     });
 
   return Object.freeze({
@@ -88,7 +90,9 @@ export async function prepareScaffold({
  * out four calls later, as an opaque 401 from whichever endpoint got there first, is how a
  * "sign in again" turned into a stack trace.
  */
-async function ensureGala({ apiBaseUrl, notify, readGala, signInGala, credentialAccepted, forgetGala }) {
+async function ensureGala({
+  apiBaseUrl, notify, readGala, signInGala, credentialAccepted, forgetGala, openUrl
+}) {
   let stored = null;
   try {
     stored = await readGala();
@@ -110,12 +114,12 @@ async function ensureGala({ apiBaseUrl, notify, readGala, signInGala, credential
   await signInGala({
     apiBaseUrl,
     showInstructions: ({ verificationUri, userCode }) =>
-      notify(`Open ${verificationUri}\nEnter code: ${userCode}`)
+      notify(`${openUrl(verificationUri) ? 'Opened' : 'Open'} ${verificationUri}\nEnter code: ${userCode}`)
   });
   return readGala();
 }
 
-async function ensureGithub({ notify, readGithub, signInGithub }) {
+async function ensureGithub({ notify, readGithub, signInGithub, openUrl }) {
   try {
     return await readGithub();
   } catch {
@@ -123,7 +127,7 @@ async function ensureGithub({ notify, readGithub, signInGithub }) {
     await signInGithub({
       showScopeWarning: ({ explanation }) => notify(`GitHub authorization: ${explanation}`),
       showInstructions: ({ verificationUri, userCode }) =>
-        notify(`Open ${verificationUri}\nEnter code: ${userCode}`)
+        notify(`${openUrl(verificationUri) ? 'Opened' : 'Open'} ${verificationUri}\nEnter code: ${userCode}`)
     });
     return readGithub();
   }
@@ -138,7 +142,7 @@ async function ensureGithub({ notify, readGithub, signInGithub }) {
  */
 async function ensureInstallation({
   apiBaseUrl, galaAccessToken, githubAccessToken, owner,
-  notify, ask, installUrl, installAttempts, resolveInstallation
+  notify, ask, installUrl, installAttempts, resolveInstallation, openUrl
 }) {
   for (let attempt = 0; attempt < Math.max(1, installAttempts); attempt += 1) {
     const installationId = await resolveInstallation({
@@ -148,15 +152,25 @@ async function ensureInstallation({
 
     if (typeof ask !== 'function') {
       throw new Error(
-        `The Gala GitHub App is not installed on ${owner}. Install it at ${installUrl} and run scaffold again, `
-        + 'or pass --installation-id explicitly.'
+        `The Gala GitHub App is not installed on ${owner}. Install it at ${installUrl} and run `
+        + 'scaffold again, or pass --installation-id explicitly.'
       );
     }
-    notify(`The Gala GitHub App is not installed on ${owner} yet.\nOpen ${installUrl}`);
+
+    // An installation belongs to one account. Installing it on a personal account when the
+    // publication is meant for an organisation looks like it worked and changes nothing here, so
+    // the account being checked is named every time rather than assumed.
+    notify(attempt === 0
+      ? `The Gala GitHub App is not installed on ${owner} yet.`
+      : `Still not seeing the App on ${owner}. Check that you installed it on ${owner} itself `
+        + 'and not on another account or organisation you belong to.');
+    notify(`${openUrl(installUrl) ? 'Opened' : 'Open'} ${installUrl}`);
     await ask('Press enter once the App is installed. ');
   }
   throw new Error(
-    `The Gala GitHub App still does not cover ${owner}. Install it at ${installUrl}, then run scaffold again.`
+    `The Gala GitHub App still does not cover ${owner}. Install it at ${installUrl} for ${owner} `
+    + 'specifically, then run scaffold again. If the App is installed under a different account, '
+    + 'pass --owner for that account, or --installation-id to name the installation directly.'
   );
 }
 

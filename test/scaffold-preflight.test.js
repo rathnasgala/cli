@@ -13,6 +13,7 @@ function stubs(overrides = {}) {
     readGithub: async () => github,
     resolveLogin: async () => 'rathnasgala',
     resolveInstallation: async () => 153144989,
+    openUrl: () => false,
     credentialAccepted: async () => true,
     forgetGala: async () => {},
     ...overrides
@@ -116,6 +117,7 @@ test('signs in to Gala and GitHub when no credential is stored, then re-reads it
     },
     resolveLogin: async () => 'rathnasgala',
     resolveInstallation: async () => 153144989,
+    openUrl: () => false,
     apiBaseUrl: 'https://api.gala67.com'
   });
 
@@ -226,4 +228,74 @@ test('does not sign in again when the server still accepts the stored credential
       signInGala: async () => assert.fail('an accepted credential must not trigger a sign-in')
     })
   });
+});
+
+test('a repeated installation check says it is still looking, and names the account it checks', async () => {
+  // The reported symptom: the same sentence three times running, with nothing to suggest the App
+  // might have been installed on a different account than the one being checked.
+  const messages = [];
+  const opened = [];
+  await assert.rejects(
+    prepareScaffold({
+      repository: 'field-notes',
+      installAttempts: 3,
+      notify: (message) => messages.push(message),
+      ask: async () => '',
+      ...stubs({
+        resolveLogin: async () => 'saranfrog2',
+        resolveInstallation: async () => null,
+        openUrl: (url) => { opened.push(url); return true; }
+      })
+    }),
+    /--installation-id/
+  );
+
+  const distinct = new Set(messages.filter((message) => !message.startsWith('Opened')));
+  assert.equal(distinct.size, 2, 'the retry must not repeat the first message verbatim');
+  assert.ok(messages.some((message) => message.includes('not installed on saranfrog2')));
+  assert.ok(messages.some((message) => message.includes('Still not seeing the App on saranfrog2')));
+  assert.ok(messages.some((message) => message.includes('organisation')));
+  assert.equal(opened.length, 3, 'the installation page opens on every attempt');
+});
+
+test('opens the sign-in pages instead of asking for the URL to be copied', async () => {
+  const messages = [];
+  const opened = [];
+  let galaStored = false;
+  let githubStored = false;
+  await prepareScaffold({
+    repository: 'field-notes',
+    notify: (message) => messages.push(message),
+    openUrl: (url) => { opened.push(url); return true; },
+    // Missing until the sign-in stores one, which is what makes the retry read succeed.
+    readGala: async () => {
+      if (!galaStored) throw new Error('missing');
+      return { accessToken: 'gala-token', apiBaseUrl: 'https://api.gala67.com' };
+    },
+    readGithub: async () => {
+      if (!githubStored) throw new Error('missing');
+      return github;
+    },
+    signInGala: async (input) => {
+      input.showInstructions({ verificationUri: 'https://api.gala67.com/v1/auth/device', userCode: 'AAAA-1111' });
+      galaStored = true;
+    },
+    signInGithub: async (input) => {
+      input.showScopeWarning({ explanation: 'repo and workflow' });
+      input.showInstructions({ verificationUri: 'https://github.com/login/device', userCode: 'BBBB-2222' });
+      githubStored = true;
+    },
+    resolveLogin: async () => 'rathnasgala',
+    resolveInstallation: async () => 153144989,
+    credentialAccepted: async () => true,
+    forgetGala: async () => {}
+  });
+
+  assert.deepEqual(opened, [
+    'https://api.gala67.com/v1/auth/device',
+    'https://github.com/login/device'
+  ]);
+  // The URL is still printed: it is the thing a writer moves to another device.
+  assert.ok(messages.some((m) => m.includes('Opened https://github.com/login/device')));
+  assert.ok(messages.some((m) => m.includes('BBBB-2222')));
 });

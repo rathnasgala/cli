@@ -20,6 +20,7 @@ import { createInterface } from 'node:readline/promises';
 import { upgradeTheme } from './upgrade-command.js';
 import { authenticateGithub } from './github-auth-command.js';
 import { scaffoldSite } from './scaffold-site.js';
+import { openInBrowser } from './open-browser.js';
 import { prepareScaffold } from './scaffold-preflight.js';
 import { refreshEngagementSnapshot } from './refresh-command.js';
 import { switchTopology } from './topology-command.js';
@@ -42,6 +43,15 @@ function reportAndExit(failure) {
     process.stderr.write(`${message}\n`);
   }
   process.exit(1);
+}
+
+/**
+ * Opens the page and says so, or falls back to asking for it to be opened by hand. The URL is
+ * printed either way — it is the thing the writer may need to move to another device.
+ */
+function announce(verificationUri, userCode) {
+  const opened = openInBrowser(verificationUri);
+  return `${opened ? 'Opened' : 'Open'} ${verificationUri}\nEnter code: ${userCode}\n`;
 }
 
 const [command, ...args] = process.argv.slice(2);
@@ -77,7 +87,7 @@ if (command === 'auth') {
     const result = await authenticateGithub({
       showScopeWarning: ({ explanation }) => process.stdout.write(`GitHub authorization: ${explanation}\n`),
       showInstructions: ({ verificationUri, userCode }) => {
-        process.stdout.write(`Open ${verificationUri}\nEnter code: ${userCode}\n`);
+        process.stdout.write(announce(verificationUri, userCode));
       }
     });
     process.stdout.write(`GitHub authentication stored securely with scopes: ${result.scopes.join(', ')}.\n`);
@@ -87,7 +97,7 @@ if (command === 'auth') {
     const result = await authenticateGala({
       apiBaseUrl,
       showInstructions: ({ verificationUri, userCode }) => {
-        process.stdout.write(`Open ${verificationUri}\nEnter code: ${userCode}\n`);
+        process.stdout.write(announce(verificationUri, userCode));
       }
     });
     process.stdout.write(`Gala authentication stored securely until ${result.expiresAt.toISOString()}.\n`);
