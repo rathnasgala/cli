@@ -130,6 +130,9 @@ if (command === 'auth') {
     ask
   });
   const result = await scaffoldSite({
+    notify: (message) => process.stdout.write(`${message}\n`),
+    ask,
+    openUrl: openInBrowser,
     owner: prepared.owner,
     repository: prepared.repository,
     target: prepared.target,

@@ -39,34 +39,75 @@ test('creates through the same endpoint the browser editor uses, with both crede
   assert.equal(created.cloneUrl, 'https://github.com/saranfrog2/cli67test.git');
 });
 
-test('NEEDS_SHARING says which repository to share and how to continue', async () => {
+test('NEEDS_SHARING is recoverable: share the repository, ask again, continue', async () => {
   /*
-   * The API reports this when the repository was created with the right content but the App
-   * installation cannot reach it yet. It is the reason CLI-created repositories did not appear in
-   * the web UI, and it is recoverable — so it must not read as a generic failure.
+   * The repository exists with the right content and the App installation simply cannot see it,
+   * because it covers selected repositories rather than all of them. That is one click from
+   * working, and the browser editor recovers from it — the CLI used to dead-end, telling the writer
+   * to use --resume, which needs a local checkout that was never created.
+   *
+   * After the first attempt the repository exists, so the server reports UNSUPPORTED rather than
+   * NEEDS_SHARING: the same situation under a different name.
    */
+  const messages = [];
+  const opened = [];
+  let shared = false;
+  let calls = 0;
+
+  const created = await createPublication({
+    ...base,
+    notify: (message) => messages.push(message),
+    openUrl: (url) => { opened.push(url); return true; },
+    ask: async () => { shared = true; return ''; },
+    fetchImpl: async () => {
+      calls += 1;
+      if (shared) {
+        return reply({
+          status: 'READY', installationId: 4568309, owner: 'rathnasgala', name: 'cli67test',
+          outcome: 'ALREADY_SHARED'
+        });
+      }
+      return reply(calls === 1
+        ? { status: 'NEEDS_SHARING', owner: 'rathnasgala', name: 'cli67test', outcome: 'CREATED_NEEDS_SHARING' }
+        : { status: 'MANUAL', outcome: 'UNSUPPORTED' });
+    }
+  });
+
+  assert.equal(created.fullName, 'rathnasgala/cli67test');
+  assert.equal(created.installationId, 4568309);
+  assert.ok(messages.some((m) => m.includes('cannot reach it yet')));
+  assert.deepEqual(opened, ['https://github.com/settings/installations']);
+});
+
+test('a repository that is never shared fails with what to do, not with --resume', async () => {
   await assert.rejects(
     createPublication({
       ...base,
+      shareAttempts: 2,
+      ask: async () => '',
       fetchImpl: async () => reply({
-        status: 'NEEDS_SHARING', owner: 'saranfrog2', name: 'cli67test',
+        status: 'NEEDS_SHARING', owner: 'rathnasgala', name: 'cli67test',
         outcome: 'CREATED_NEEDS_SHARING'
       })
     }),
-    (error) => /saranfrog2\/cli67test/.test(error.message)
+    (error) => /still cannot reach/.test(error.message)
       && /settings\/installations/.test(error.message)
-      && /--resume/.test(error.message)
+      && !/--resume/.test(error.message)
   );
 });
 
-test('MANUAL names the outcome instead of failing anonymously', async () => {
+test('a first-attempt MANUAL is not a sharing problem, and says so without looping', async () => {
+  // Nothing was created, so there is nothing to share; prompting would waste the writer's time.
+  let calls = 0;
   await assert.rejects(
     createPublication({
       ...base,
-      fetchImpl: async () => reply({ status: 'MANUAL', outcome: 'NO_INSTALLATION' })
+      ask: async () => assert.fail('a first-attempt MANUAL must not prompt for sharing'),
+      fetchImpl: async () => { calls += 1; return reply({ status: 'MANUAL', outcome: 'NO_INSTALLATION' }); }
     }),
     /NO_INSTALLATION.*site-template.*--empty-existing-repository/s
   );
+  assert.equal(calls, 1);
 });
 
 test('refuses a READY answer that names no repository or no installation', async () => {

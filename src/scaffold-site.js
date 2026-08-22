@@ -48,6 +48,7 @@ function registrationLocation(owner, topology, canonicalBaseUrl) {
 
 export async function scaffoldSite({
   owner, repository, target, githubInstallationId, siteOptions, emptyExistingRepository = false,
+  notify = (message) => process.stdout.write(`${message}\n`), ask, openUrl,
   resumeExistingCheckout = false, topology = 'provider-default', canonicalBaseUrl, actionRef,
   buildMode = 'build-and-deploy', templateOwner = 'rathnasgala',
   templateRepository = 'site-template',
@@ -110,7 +111,8 @@ export async function scaffoldSite({
      */
     const created = await createRepository({
       apiBaseUrl: gala.apiBaseUrl, galaAccessToken: gala.accessToken,
-      githubAccessToken: github.accessToken, name: repositoryName
+      githubAccessToken: github.accessToken, name: repositoryName,
+      notify, ask, openUrl
     });
     repositoryOwner = segment(created.owner, 'owner');
     repositoryName = segment(created.repository, 'repository');

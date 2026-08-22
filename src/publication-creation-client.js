@@ -22,7 +22,47 @@ export async function createPublication({
   githubAccessToken,
   name,
   fetchImpl = fetch,
-  authorize = exchangeGithubAuthorization
+  authorize = exchangeGithubAuthorization,
+  notify = () => {},
+  ask,
+  openUrl = () => false,
+  shareAttempts = 3,
+  installationsUrl = 'https://github.com/settings/installations'
+}) {
+  let created = false;
+  for (let attempt = 0; attempt < Math.max(1, shareAttempts); attempt += 1) {
+    const result = await requestPublication({
+      apiBaseUrl, galaAccessToken, githubAccessToken, name, fetchImpl, authorize
+    });
+    if (result.ready) return result.publication;
+
+    /*
+     * The repository exists with the right content; the App installation simply cannot see it,
+     * because it is scoped to selected repositories rather than all of them. Sharing it is a click,
+     * and asking again then returns READY — the server short-circuits on a repository it can
+     * already see. The browser editor recovers the same way; without this the CLI dead-ends on a
+     * state that is one click from working.
+     *
+     * After the first attempt the repository exists, so a further refusal reports UNSUPPORTED
+     * rather than NEEDS_SHARING — the same situation under a different name.
+     */
+    const shareable = result.status === 'NEEDS_SHARING' || created;
+    created = created || result.status === 'NEEDS_SHARING';
+    if (!shareable || typeof ask !== 'function') throw result.failure;
+
+    notify(`${result.owner ?? ''}/${result.repository ?? name} exists, but the Gala GitHub App `
+      + 'cannot reach it yet — its installation covers only selected repositories.');
+    notify(`${openUrl(installationsUrl) ? 'Opened' : 'Open'} ${installationsUrl}`);
+    await ask('Press enter once the App can access that repository. ');
+  }
+  throw new Error(
+    `The Gala GitHub App still cannot reach the repository for ${name}. Give it access at `
+    + `${installationsUrl}, then run scaffold again.`
+  );
+}
+
+async function requestPublication({
+  apiBaseUrl, galaAccessToken, githubAccessToken, name, fetchImpl, authorize
 }) {
   const authorization = await authorize({
     apiBaseUrl, galaAccessToken, githubAccessToken, fetchImpl
@@ -44,19 +84,16 @@ export async function createPublication({
   const owner = payload?.owner;
   const repository = payload?.name;
 
-  if (status === 'NEEDS_SHARING') {
-    throw new Error(
-      `${owner}/${repository} was created from the template, but the Gala GitHub App cannot reach `
-      + 'it yet. Open https://github.com/settings/installations, give the App access to that '
-      + 'repository, then run scaffold again with --resume.'
-    );
-  }
   if (status !== 'READY') {
-    throw new Error(
-      `Gala could not create the publication repository (${payload?.outcome ?? status}). `
-      + 'Create it from https://github.com/rathnasgala/site-template yourself, then run scaffold '
-      + 'with --empty-existing-repository.'
-    );
+    return {
+      ready: false, status, owner, repository,
+      failure: new Error(
+        `Gala could not create the publication repository (${payload?.outcome ?? status}). `
+        + 'Give the Gala GitHub App access to it at https://github.com/settings/installations, or '
+        + 'create it from https://github.com/rathnasgala/site-template yourself and run scaffold '
+        + 'with --empty-existing-repository.'
+      )
+    };
   }
   if (typeof owner !== 'string' || typeof repository !== 'string') {
     throw new TypeError('Gala publication creation returned no repository identity');
@@ -66,7 +103,7 @@ export async function createPublication({
     throw new TypeError('Gala publication creation returned no installation');
   }
 
-  return Object.freeze({
+  return { ready: true, status, owner, repository, publication: Object.freeze({
     owner,
     repository,
     installationId,
@@ -74,5 +111,5 @@ export async function createPublication({
     // The server names the repository it actually made, which may differ from what was asked for.
     fullName: `${owner}/${repository}`,
     cloneUrl: `https://github.com/${owner}/${repository}.git`
-  });
+  }) };
 }
