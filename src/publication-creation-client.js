@@ -56,7 +56,18 @@ export async function createPublication({
       repositoryName = result.repository ?? repositoryName;
       repositoryOwner = result.owner ?? repositoryOwner;
     }
-    if (!shareable || typeof ask !== 'function') throw result.failure;
+    if (!shareable) throw result.failure;
+    if (typeof ask !== 'function') {
+      /*
+       * No terminal to prompt at — CI, or a piped run. The repository exists and is one grant from
+       * working, so the failure has to carry everything needed to finish it by hand. Falling back
+       * to the generic message here threw away the deep link that had just been computed.
+       */
+      throw new Error(
+        `${repositoryOwner}/${repositoryName} was created, but the Gala GitHub App cannot reach it `
+        + `yet. Add that one repository to the installation at ${shareUrl}, then run scaffold again.`
+      );
+    }
 
     notify(`${repositoryOwner}/${repositoryName} was created, but the Gala GitHub App cannot reach `
       + 'it yet — its installation covers only selected repositories, which is the right way to '

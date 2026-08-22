@@ -26,30 +26,35 @@ test('orchestrates template, API-owned secret provisioning, workflow, and reposi
       siteId: '01K00000000000000000000000', siteSecret: 'one-time-secret',
       canonicalBaseUrl: 'https://rathnasgala.github.io', pathPrefix: '/smoke01'
     }; },
-    finalize: async (...input) => calls.push(['finalize', ...input]),
-    writeWorkflow: async (input) => calls.push(['workflow', input]),
+    sync: async (root) => { calls.push(['sync', root]); return '0123456789abcdef0123456789abcdef01234567'; },
     installVariable: async (input) => calls.push(['variable', input]),
-    commit: async (root) => { calls.push(['commit', root]); return '0123456789abcdef0123456789abcdef01234567'; },
+    commit: async (root) => { calls.push(['commit', root]); },
     provisionPages: async (input) => { calls.push(['pages', input]); return { created: true }; }
   });
 
+  /*
+   * The configuration commit goes up before registration and nothing goes up after it: the server
+   * writes site.config.yml and the publish workflow during register, and a CLI commit afterwards
+   * produced a second Publish run that collided with the first one's deployment record.
+   */
   assert.deepEqual(calls.map(([name]) => name), [
-    'create', 'await-content', 'clone', 'configure', 'register', 'finalize', 'workflow', 'variable',
-    'commit', 'pages'
+    'create', 'await-content', 'clone', 'configure', 'commit', 'register', 'variable', 'sync'
   ]);
   // Content is awaited before the clone, or the checkout is empty.
   assert.ok(calls.findIndex(([name]) => name === 'await-content')
     < calls.findIndex(([name]) => name === 'clone'));
-  assert.equal(calls[4][1].topology, 'PROVIDER_DEFAULT');
-  assert.equal(calls[4][1].canonicalBaseUrl, 'https://rathnasgala.github.io');
-  assert.match(calls[4][1].idempotencyKey, /^scaffold-[0-9a-f]{64}$/);
+  const registered = calls.find(([name]) => name === 'register')[1];
+  assert.equal(registered.topology, 'PROVIDER_DEFAULT');
+  assert.equal(registered.canonicalBaseUrl, 'https://rathnasgala.github.io');
+  assert.match(registered.idempotencyKey, /^scaffold-[0-9a-f]{64}$/);
   // The installation the API reported at creation is the one registration is told about.
-  assert.equal(calls[4][1].githubInstallationId, 153144989);
-  assert.deepEqual(calls[7][1], {
+  assert.equal(registered.githubInstallationId, 153144989);
+  assert.deepEqual(calls.find(([name]) => name === 'variable')[1], {
     owner: 'rathnasgala', repository: 'smoke01', accessToken: 'github-token',
     variableName: 'GALA_API_BASE_URL', variableValue: 'https://api.gala67.com/'
   });
-  assert.equal(calls[9][1].commitSha, '0123456789abcdef0123456789abcdef01234567');
+  assert.equal(result.commitSha, '0123456789abcdef0123456789abcdef01234567');
+  assert.equal(result.pages, null, 'the provider default needs no Pages call');
   assert.equal(result.siteId, '01K00000000000000000000000');
 });
 
@@ -59,7 +64,6 @@ test('registers and provisions an explicit custom-domain root without provider-p
     owner: 'rathnasgala', repository: 'smoke02', target: '/tmp/smoke02',
     githubInstallationId: 153144989, resumeExistingCheckout: true,
     topology: 'custom-domain', canonicalBaseUrl: 'https://SMOKE.gala67.com/',
-    actionRef: 'rathnasgala/publish/.github/workflows/publish.yml@v0.0.4',
     siteOptions: { timezone: 'UTC' },
     readGithub: async () => ({ accessToken: 'github-token', scopes: ['repo', 'workflow'] }),
     readGala: async () => ({ accessToken: 'gala-token', apiBaseUrl: 'https://api.gala67.com' }),
@@ -69,18 +73,18 @@ test('registers and provisions an explicit custom-domain root without provider-p
       siteId: '01K00000000000000000000000', siteSecret: 'secret',
       canonicalBaseUrl: 'https://smoke.gala67.com', pathPrefix: '/'
     }; },
-    finalize: async (...input) => calls.push(['finalize', ...input]),
-    writeWorkflow: async (input) => calls.push(['workflow', input]),
+    sync: async () => '0123456789abcdef0123456789abcdef01234567',
     installVariable: async () => {},
-    commit: async () => '0123456789abcdef0123456789abcdef01234567',
+    commit: async () => {},
     provisionPages: async (input) => { calls.push(['pages', input]); return { created: true }; }
   });
-  assert.equal(calls[0][1].topology, 'CUSTOM_DOMAIN');
-  assert.equal(calls[0][1].canonicalBaseUrl, 'https://smoke.gala67.com');
-  assert.equal(calls[1][2].topology, 'custom-domain');
-  assert.equal(calls[1][2].pathPrefix, '/');
-  assert.equal(calls[2][1].actionRef, 'rathnasgala/publish/.github/workflows/publish.yml@v0.0.4');
-  assert.equal(calls[3][1].customDomain, 'smoke.gala67.com');
+  const registered = calls.find(([name]) => name === 'register')[1];
+  assert.equal(registered.topology, 'CUSTOM_DOMAIN');
+  // The host is normalised to lower case and the trailing slash dropped before it is registered.
+  assert.equal(registered.canonicalBaseUrl, 'https://smoke.gala67.com');
+  // The publish workflow is the server's to write now, so `--action-ref` no longer applies to
+  // scaffold; `gala workflow --action-ref` still regenerates it deliberately.
+  assert.equal(calls.find(([name]) => name === 'pages')[1].customDomain, 'smoke.gala67.com');
 });
 
 test('rejects incomplete or ambiguous topology inputs before reading credentials', async () => {
@@ -127,7 +131,7 @@ test('adopts only a verified empty repository by repointing the local template c
     setOrigin: async (input) => calls.push(['origin', input]),
     configure: async () => ({ site: { timezone: 'UTC' } }),
     register: async () => ({ siteId: '01K00000000000000000000000', siteSecret: 'secret', canonicalBaseUrl: 'https://rathnasgala.github.io', pathPrefix: '/smoke01' }),
-    finalize: async () => {}, writeWorkflow: async () => {},
+    sync: async () => '0123456789abcdef0123456789abcdef01234567', writeWorkflow: async () => {},
     installVariable: async () => {}, commit: async () => '0123456789abcdef0123456789abcdef01234567',
     provisionPages: async () => ({ created: true })
   });
@@ -148,7 +152,7 @@ test('resumes only a checkout whose origin matches the requested repository', as
     clone: async () => { throw new Error('must not clone while resuming'); },
     configure: async () => ({ site: { timezone: 'UTC' } }),
     register: async () => ({ siteId: '01K00000000000000000000000', siteSecret: 'secret', canonicalBaseUrl: 'https://rathnasgala.github.io', pathPrefix: '/smoke01' }),
-    finalize: async () => {}, writeWorkflow: async () => {},
+    sync: async () => '0123456789abcdef0123456789abcdef01234567', writeWorkflow: async () => {},
     installVariable: async () => {}, commit: async () => '0123456789abcdef0123456789abcdef01234567',
     provisionPages: async () => ({ created: true })
   });
@@ -170,9 +174,9 @@ test('build-only scaffolding never provisions GitHub Pages', async () => {
       siteId: '01K00000000000000000000000', siteSecret: 'secret',
       canonicalBaseUrl: 'https://rathnasgala.github.io', pathPrefix: '/hosted-blog'
     }),
-    finalize: async () => {}, writeWorkflow: async () => {},
+    sync: async () => '0123456789abcdef0123456789abcdef01234567', writeWorkflow: async () => {},
     installVariable: async () => {},
-    commit: async () => '0123456789abcdef0123456789abcdef01234567',
+    commit: async () => {},
     provisionPages: async () => { throw new Error('build-only must not provision Pages'); }
   });
   assert.equal(result.pages, null);
@@ -213,13 +217,14 @@ test('the server decides the owner and name, and everything downstream follows i
       siteId: '01K00000000000000000000000', siteSecret: 's',
       canonicalBaseUrl: 'https://actual-org.github.io', pathPrefix: '/actual-name'
     }; },
-    finalize: async () => {},
-    writeWorkflow: async () => {},
+    sync: async () => '0123456789abcdef0123456789abcdef01234567',
     installVariable: async (input) => calls.push(['variable', input]),
-    commit: async () => '0123456789abcdef0123456789abcdef01234567',
+    commit: async () => {},
     provisionPages: async (input) => { calls.push(['pages', input]); return { created: true }; }
   });
 
+  assert.ok(!calls.some(([name]) => name === 'pages'),
+    'a provider-default publication is served by classic Pages without an API call');
   const register = calls.find(([name]) => name === 'register')[1];
   assert.equal(register.repositoryOwner, 'actual-org');
   assert.equal(register.repositoryName, 'actual-name');
@@ -228,9 +233,41 @@ test('the server decides the owner and name, and everything downstream follows i
   assert.equal(register.githubInstallationId, 155579156);
 
   assert.equal(calls.find(([name]) => name === 'variable')[1].owner, 'actual-org');
-  assert.equal(calls.find(([name]) => name === 'pages')[1].owner, 'actual-org');
-  assert.equal(calls.find(([name]) => name === 'pages')[1].repository, 'actual-name');
   assert.equal(calls.find(([name]) => name === 'clone')[1].cloneUrl,
     'https://github.com/actual-org/actual-name.git');
   assert.equal(result.fullName, 'actual-org/actual-name');
+});
+
+test('a custom domain still configures Pages, because nothing else will', async () => {
+  /*
+   * The provider default needs no Pages call: publishing creates a `gh-pages` branch and GitHub
+   * turns on classic Pages by itself — every scaffold was serving before this step ran, including
+   * runs that failed before reaching it. All the step cost there was ten minutes of polling and a
+   * reported failure for a live publication.
+   *
+   * A custom domain is the opposite: classic Pages will not point itself at someone's own hostname.
+   */
+  const calls = [];
+  await scaffoldSite({
+    owner: 'rathnasgala', repository: 'smoke02', target: '/tmp/smoke02',
+    resumeExistingCheckout: true,
+    topology: 'custom-domain', canonicalBaseUrl: 'https://smoke.gala67.com',
+    siteOptions: { timezone: 'UTC' },
+    readGithub: async () => ({ accessToken: 'ghu_token' }),
+    readGala: async () => ({ accessToken: 'gala-token', apiBaseUrl: 'https://api.gala67.com' }),
+    verifyCheckout: async () => '/tmp/smoke02',
+    configure: async () => ({ site: { timezone: 'UTC' } }),
+    register: async () => ({
+      siteId: '01K00000000000000000000000', siteSecret: 's',
+      canonicalBaseUrl: 'https://smoke.gala67.com', pathPrefix: '/'
+    }),
+    sync: async () => '0123456789abcdef0123456789abcdef01234567',
+    installVariable: async () => {},
+    commit: async () => {},
+    provisionPages: async (input) => { calls.push(input); return { created: true }; }
+  });
+
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].customDomain, 'smoke.gala67.com');
+  assert.equal(calls[0].owner, 'rathnasgala');
 });

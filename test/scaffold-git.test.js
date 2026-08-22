@@ -4,7 +4,7 @@ import test from 'node:test';
 
 import { commitScaffold } from '../src/scaffold-git.js';
 
-test('commits only generated configuration and workflow before pushing without a shell', async () => {
+test('commits only the site configuration, which is the one file the CLI still owns', async () => {
   const calls = [];
   const spawnProcess = (command, args, options) => {
     calls.push({ command, args, options });
@@ -18,7 +18,7 @@ test('commits only generated configuration and workflow before pushing without a
   };
   assert.equal(await commitScaffold('/site', { spawnProcess }), '0123456789abcdef0123456789abcdef01234567');
   assert.deepEqual(calls.map(({ args }) => args), [
-    ['-C', '/site', 'add', '--', 'site.config.yml', '.github/workflows/publish.yml'],
+    ['-C', '/site', 'add', '--', 'site.config.yml'],
     ['-C', '/site', 'diff', '--cached', '--quiet', '--exit-code'],
     ['-C', '/site', 'commit', '-m', 'chore(gala): configure site'],
     ['-C', '/site', 'push', 'origin', 'HEAD'],
@@ -41,7 +41,7 @@ test('skips an empty retry commit but still retries the push', async () => {
   };
   await commitScaffold('/site', { spawnProcess });
   assert.deepEqual(calls.map(({ args }) => args), [
-    ['-C', '/site', 'add', '--', 'site.config.yml', '.github/workflows/publish.yml'],
+    ['-C', '/site', 'add', '--', 'site.config.yml'],
     ['-C', '/site', 'diff', '--cached', '--quiet', '--exit-code'],
     ['-C', '/site', 'push', 'origin', 'HEAD'],
     ['-C', '/site', 'rev-parse', 'HEAD']

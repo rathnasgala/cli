@@ -110,7 +110,7 @@ test('signs in to Gala and GitHub when no credential is stored, then re-reads it
     },
     signInGithub: async (input) => {
       order.push(['sign-in-github']);
-      input.showScopeWarning({ explanation: 'repo and workflow are required' });
+      // No scope warning: a GitHub App negotiates no scopes, so there is nothing to warn about.
       input.showInstructions({ verificationUri: 'https://github.com/login/device', userCode: 'WXYZ-9876' });
       githubStored = true;
     },
@@ -216,7 +216,6 @@ test('opens the sign-in pages instead of asking for the URL to be copied', async
       galaStored = true;
     },
     signInGithub: async (input) => {
-      input.showScopeWarning({ explanation: 'repo and workflow' });
       input.showInstructions({ verificationUri: 'https://github.com/login/device', userCode: 'BBBB-2222' });
       githubStored = true;
     },

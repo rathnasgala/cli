@@ -155,3 +155,20 @@ test('links to the installation that needs the grant, on the right settings path
       'https://github.com/settings/installations');
   }
 });
+
+test('without a terminal it still names the repository and the exact grant page', async () => {
+  // CI, or a piped run. The repository exists and is one grant from working, so the failure has to
+  // carry everything needed to finish it by hand rather than the generic advice.
+  await assert.rejects(
+    createPublication({
+      ...base,
+      ask: undefined,
+      fetchImpl: async () => reply({
+        status: 'NEEDS_SHARING', installationId: 4568309, owner: 'rathnasgala',
+        name: 'cli67test', outcome: 'CREATED_NEEDS_SHARING'
+      })
+    }),
+    (error) => /rathnasgala\/cli67test/.test(error.message)
+      && error.message.includes('https://github.com/organizations/rathnasgala/settings/installations/4568309')
+  );
+});

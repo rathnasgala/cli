@@ -119,7 +119,6 @@ async function ensureGithub({ notify, readGithub, signInGithub, openUrl }) {
   } catch {
     notify('Signing in to GitHub.');
     await signInGithub({
-      showScopeWarning: ({ explanation }) => notify(`GitHub authorization: ${explanation}`),
       showInstructions: ({ verificationUri, userCode }) =>
         notify(`${openUrl(verificationUri) ? 'Opened' : 'Open'} ${verificationUri}\nEnter code: ${userCode}`)
     });

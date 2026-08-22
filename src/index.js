@@ -84,13 +84,12 @@ if (recognizedCommands.has(command)) {
 
 if (command === 'auth') {
   if (args[0] === 'github') {
-    const result = await authenticateGithub({
-      showScopeWarning: ({ explanation }) => process.stdout.write(`GitHub authorization: ${explanation}\n`),
+    await authenticateGithub({
       showInstructions: ({ verificationUri, userCode }) => {
         process.stdout.write(announce(verificationUri, userCode));
       }
     });
-    process.stdout.write(`GitHub authentication stored securely with scopes: ${result.scopes.join(', ')}.\n`);
+    process.stdout.write('GitHub authentication stored securely.\n');
   } else {
     const apiIndex = args.indexOf('--api-base-url');
     const apiBaseUrl = apiIndex === -1 ? 'https://api.gala67.com' : args[apiIndex + 1];
@@ -139,9 +138,7 @@ if (command === 'auth') {
     githubInstallationId: prepared.githubInstallationId,
     topology,
     canonicalBaseUrl: valueFor('--canonical-base-url'),
-    actionRef: valueFor('--action-ref'),
     siteOptions,
-    buildMode: valueFor('--mode') ?? 'build-and-deploy',
     emptyExistingRepository: args.includes('--empty-existing-repository'),
     resumeExistingCheckout: args.includes('--resume')
   });

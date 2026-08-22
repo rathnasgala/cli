@@ -73,3 +73,23 @@ test('accepts only the exact HTTPS origin for a resumed checkout', async () => {
     }), /origin must be/);
   }
 });
+
+test('a repository the App cannot see is named as unshared, not merely missing', async () => {
+  /*
+   * `--empty-existing-repository` inspects a repository before Gala has any relationship with it.
+   * The OAuth token this replaced held `repo` and could see every repository the writer could —
+   * precisely the access we stopped asking for. A GitHub App user token sees only what the App is
+   * installed on, so 404 here means "not shared with Gala" far more often than "does not exist",
+   * and a bare lookup failure sends the writer looking for the wrong problem.
+   */
+  await assert.rejects(
+    verifyEmptyRepository({
+      owner: 'ada', repository: 'notes', accessToken: 'ghu_token',
+      fetchImpl: async () => new Response('{"message":"Not Found"}', {
+        status: 404, headers: { 'content-type': 'application/json' }
+      })
+    }),
+    (error) => /ada\/notes is not visible to Gala/.test(error.message)
+      && /settings\/installations/.test(error.message)
+  );
+});

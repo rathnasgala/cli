@@ -1,6 +1,7 @@
 import { spawn } from 'node:child_process';
 import path from 'node:path';
 import { describeHttpFailure } from './http-failure.js';
+import { gitCredentialArguments, gitEnvironment } from './git-credentials.js';
 
 const GITHUB_API_VERSION = '2026-03-10';
 const REPOSITORY_IDENTITY = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
@@ -135,7 +136,7 @@ export async function awaitRepositoryContent({
   );
 }
 
-export function cloneRepository({ cloneUrl, target, spawnProcess = spawn }) {
+export function cloneRepository({ cloneUrl, target, spawnProcess = spawn, accessToken }) {
   const source = new URL(requiredString(cloneUrl, 'cloneUrl'));
   if (
     source.protocol !== 'https:'
@@ -150,11 +151,16 @@ export function cloneRepository({ cloneUrl, target, spawnProcess = spawn }) {
   const resolvedTarget = path.resolve(requiredString(target, 'target'));
 
   return new Promise((resolve, reject) => {
-    const child = spawnProcess('git', ['clone', source.href, resolvedTarget], {
-      cwd: path.dirname(resolvedTarget),
-      shell: false,
-      stdio: 'inherit'
-    });
+    const child = spawnProcess(
+      'git',
+      [...gitCredentialArguments(accessToken), 'clone', source.href, resolvedTarget],
+      {
+        cwd: path.dirname(resolvedTarget),
+        shell: false,
+        stdio: 'inherit',
+        env: gitEnvironment(accessToken)
+      }
+    );
     child.once('error', reject);
     child.once('exit', (code, signal) => {
       if (signal) reject(new Error(`Git clone terminated by signal ${signal}`));

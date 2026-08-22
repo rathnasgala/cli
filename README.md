@@ -32,14 +32,15 @@ One command, run inside an empty folder named after the publication you want:
 
 ```console
 mkdir field-notes && cd field-notes
-npx --yes @rathnasgala/cli@latest scaffold --target ./ --mode build-and-deploy
+npx --yes @rathnasgala/cli@latest scaffold --target ./
 ```
 
 That single command does all of the following, and asks only for what it cannot work out:
 
 1. **Signs you in to Gala** if no valid token is stored, showing a code to enter in the browser.
-2. **Signs you in to GitHub** the same way, requesting `repo` to create the publication and install
-   its Actions secret, and `workflow` for the initial scaffold. Ordinary publishing needs neither.
+2. **Signs you in to GitHub** the same way, as the Gala GitHub App. It requests no scopes: a GitHub
+   App's permissions are fixed on the app and granted when you install it, so Gala reaches only the
+   repositories you have shared with it — never every repository you can access.
 3. **Reads your GitHub account** from that token, so there is no username to type.
 4. **Finds the Gala GitHub App installation** for your account. If the App is not installed yet it
    prints the installation page, waits while you install it, and carries on — the installation ID
@@ -75,8 +76,7 @@ npx --yes @rathnasgala/cli@latest scaffold \
   --owner YOUR_GITHUB_USERNAME \
   --repository YOUR_REPOSITORY_NAME \
   --target ./YOUR_REPOSITORY_NAME \
-  --installation-id YOUR_INSTALLATION_ID \
-  --mode build-and-deploy
+  --installation-id YOUR_INSTALLATION_ID
 ```
 
 `--repository` is otherwise taken from `--target`, then from `--site-name`, and only then asked
@@ -97,7 +97,7 @@ Inside the table below, `gala` is shorthand for that prefix.
 | --- | --- | --- |
 | `gala auth` | Authenticate the author with Gala | `--api-base-url URL` for a non-production API |
 | `gala auth github` | Authenticate the CLI with GitHub | Browser device flow; requests `repo workflow` |
-| `gala scaffold` | Sign in if needed, then create and register a publication | All derived; override with `--owner`, `--repository`, `--target`, `--installation-id`, `--mode` |
+| `gala scaffold` | Sign in if needed, then create and register a publication | All derived; override with `--owner`, `--repository`, `--target`, `--installation-id` |
 | `gala configure` | Update author-owned site and design settings | `--root`, plus the configuration options below |
 | `gala new` | Create a Markdown post variant | `--root`, `--title`, `--language`, `--today` |
 | `gala validate` | Validate repository content without publishing | optional root path, `--today` |
@@ -159,14 +159,6 @@ npx --yes @rathnasgala/cli@latest scaffold \
 
 Scaffolding is designed to converge after partial failure. It will not adopt a non-empty unrelated repository.
 
-### Build without deploying
-
-```console
-npx --yes @rathnasgala/cli@latest scaffold ... --mode build-only
-```
-
-`build-only` writes and validates the site but does not provision GitHub Pages. `build-and-deploy` is the default.
-
 ## Everyday workflow
 
 Create another post:
@@ -202,7 +194,7 @@ npx --yes @rathnasgala/cli@latest doctor
 ## Security and ownership
 
 - Your repository remains the canonical source for publication content and configuration.
-- Gala credentials and GitHub OAuth credentials are stored outside the repository.
+- Gala credentials and GitHub App credentials are stored outside the repository.
 - Credential directories are created with private permissions; credential files use mode `0600` on operating systems that support POSIX modes.
 - The site signing secret is returned once by the API and sealed directly into GitHub Actions secrets.
 - Do not copy credential files into the repository, dotfiles, cloud-sync folders, or `/tmp`.

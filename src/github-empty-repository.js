@@ -12,6 +12,19 @@ export async function verifyEmptyRepository({ owner, repository, accessToken, fe
   const response = await fetchImpl(repositoryUrl, {
     headers
   });
+  if (response.status === 404) {
+    /*
+     * A GitHub App user token only sees repositories the App is installed on, so "not found" here
+     * usually means "not shared with Gala" rather than "does not exist". The OAuth token this
+     * replaced held `repo` and could see everything, which is exactly the access we stopped asking
+     * for — so the cost is that this needs saying out loud.
+     */
+    throw new Error(
+      `${owner}/${repository} is not visible to Gala. Either it does not exist, or the Gala GitHub `
+      + 'App has not been given access to it — install or share it at '
+      + 'https://github.com/settings/installations, then run scaffold again.'
+    );
+  }
   if (!response.ok) throw new Error(await describeHttpFailure(response, 'GitHub repository lookup'));
   const payload = await response.json();
   if (payload.full_name?.toLowerCase() !== `${owner}/${repository}`.toLowerCase()) {

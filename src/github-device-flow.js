@@ -35,15 +35,24 @@ async function postForm(fetchImpl, url, fields) {
   return payload;
 }
 
+/**
+ * `scopes` is optional and must be omitted for a GitHub App.
+ *
+ * OAuth Apps negotiate scopes per authorization; GitHub Apps do not — their permissions are fixed
+ * on the app and granted at installation. Sending a `scope` parameter to an App's device flow asks
+ * for something the grant cannot express.
+ */
 export async function requestDeviceCode({ clientId, scopes, fetchImpl = fetch }) {
   const normalizedClientId = requiredString(clientId, 'clientId');
-  if (!Array.isArray(scopes) || scopes.length === 0) {
-    throw new TypeError('scopes must be a non-empty list');
+  if (scopes != null && (!Array.isArray(scopes) || scopes.length === 0)) {
+    throw new TypeError('scopes must be a non-empty list when supplied');
   }
-  const normalizedScopes = scopes.map((scope) => requiredString(scope, 'scope'));
+  const normalizedScopes = scopes == null
+    ? null
+    : scopes.map((scope) => requiredString(scope, 'scope'));
   const payload = await postForm(fetchImpl, DEVICE_CODE_URL, {
     client_id: normalizedClientId,
-    scope: normalizedScopes.join(' ')
+    ...(normalizedScopes == null ? {} : { scope: normalizedScopes.join(' ') })
   });
 
   return Object.freeze({
@@ -68,7 +77,8 @@ export async function pollForAccessToken({
   const normalizedClientId = requiredString(clientId, 'clientId');
   const normalizedDeviceCode = requiredString(deviceCode, 'deviceCode');
   if (!Array.isArray(requiredScopes)) throw new TypeError('requiredScopes must be a list');
-  const normalizedRequiredScopes = requiredScopes.map((scope) =>
+  // A GitHub App answers with no `scope` field at all; there is nothing to require of it.
+  const normalizedRequiredScopes = (requiredScopes ?? []).map((scope) =>
     requiredString(scope, 'scope').toLowerCase()
   );
   const lifetime = positiveInteger(expiresInSeconds, 'expiresInSeconds') * 1000;
@@ -105,8 +115,21 @@ export async function pollForAccessToken({
       if (missingScopes.length > 0) {
         throw new Error(`GitHub authorization omitted required scope(s): ${missingScopes.join(', ')}`);
       }
+      /*
+       * A GitHub App may be set to expire user tokens after eight hours, in which case GitHub
+       * returns `expires_in` and a refresh token. Refreshing one requires the app's client secret,
+       * which a published CLI cannot hold — so the expiry is reported rather than dropped, and the
+       * caller decides what to do about a credential it has no way to renew.
+       */
+      const expiresInSeconds = Number(payload.expires_in);
       return Object.freeze({
         accessToken: requiredString(payload.access_token, 'access_token'),
+        ...(Number.isFinite(expiresInSeconds) && expiresInSeconds > 0
+          ? { expiresAt: new Date(now() + expiresInSeconds * 1000) }
+          : {}),
+        ...(typeof payload.refresh_token === 'string' && payload.refresh_token !== ''
+          ? { refreshToken: payload.refresh_token }
+          : {}),
         tokenType: 'bearer',
         scopes: grantedScopes
       });

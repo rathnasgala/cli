@@ -9,9 +9,7 @@ import { createPublication } from './publication-creation-client.js';
 import { installRepositoryVariable } from './github-repository-variable.js';
 import { provisionGithubPages } from './github-pages-provisioning.js';
 import { registerSite } from './site-registration-client.js';
-import { writeRegisteredSiteConfiguration } from './site-config-registration.js';
-import { writePublishWorkflow } from './workflow-command.js';
-import { commitScaffold } from './scaffold-git.js';
+import { commitScaffold, syncScaffold } from './scaffold-git.js';
 import {
   setRepositoryOrigin, verifyEmptyRepository, verifyRepositoryOrigin
 } from './github-empty-repository.js';
@@ -49,16 +47,15 @@ function registrationLocation(owner, topology, canonicalBaseUrl) {
 export async function scaffoldSite({
   owner, repository, target, githubInstallationId, siteOptions, emptyExistingRepository = false,
   notify = (message) => process.stdout.write(`${message}\n`), ask, openUrl,
-  resumeExistingCheckout = false, topology = 'provider-default', canonicalBaseUrl, actionRef,
-  buildMode = 'build-and-deploy', templateOwner = 'rathnasgala',
+  resumeExistingCheckout = false, topology = 'provider-default', canonicalBaseUrl,
+  templateOwner = 'rathnasgala',
   templateRepository = 'site-template',
   readGithub = readGithubCredential, readGala = readGalaCredential,
   createRepository = createPublication, awaitContent = awaitRepositoryContent, clone = cloneRepository,
-  configure = configureSite, register = registerSite, finalize = writeRegisteredSiteConfiguration,
-  writeWorkflow = writePublishWorkflow,
+  configure = configureSite, register = registerSite,
   installVariable = installRepositoryVariable,
   provisionPages = provisionGithubPages,
-  commit = commitScaffold, verifyEmpty = verifyEmptyRepository, setOrigin = setRepositoryOrigin,
+  commit = commitScaffold, sync = syncScaffold, verifyEmpty = verifyEmptyRepository, setOrigin = setRepositoryOrigin,
   verifyCheckout = verifyRepositoryOrigin
 }) {
   const requestedOwner = segment(owner, 'owner');
@@ -125,11 +122,30 @@ export async function scaffoldSite({
     });
   }
   if (!resumeExistingCheckout) {
-    root = await clone({ cloneUrl: generated.cloneUrl, target });
+    root = await clone({ cloneUrl: generated.cloneUrl, target, accessToken: github.accessToken });
     if (emptyExistingRepository) await setOrigin({ root, owner: repositoryOwner, repository: repositoryName });
   }
   const location = registrationLocation(repositoryOwner, topology, canonicalBaseUrl);
-  const configured = await configure(root, siteOptions ?? {});
+  await configure(root, siteOptions ?? {});
+
+  /*
+   * The writer's design choices go up before registration, and nothing goes up after it.
+   *
+   * Registration makes the server write `site.config.yml` and `.github/workflows/publish.yml` into
+   * the repository — the same code path the browser editor uses. The CLI used to write its own
+   * versions of both files afterwards and commit them, which produced a second commit whose whole
+   * content was rewriting `api-base-url` into a `vars` reference and stripping the template's
+   * comments. That second commit triggered a second Publish run, which collided with the first
+   * one's deployment record and failed:
+   *
+   *     Assigned-ID source moved on the remote branch: content/posts/example/index.en.md
+   *
+   * So those two files have one owner now, and it is the server. What is left here is the design
+   * configuration, which only the CLI receives — pushed first so the server provisions on top of
+   * it rather than around it.
+   */
+  await commit(root, { accessToken: github.accessToken });
+
   const idempotencyKey = `scaffold-${createHash('sha256').update(`${repositoryOwner.toLowerCase()}/${repositoryName.toLowerCase()}`).digest('hex')}`;
   const registration = await register({
     apiBaseUrl: gala.apiBaseUrl, galaAccessToken: gala.accessToken,
@@ -137,24 +153,31 @@ export async function scaffoldSite({
     githubInstallationId: resolvedInstallationId, repositoryOwner, repositoryName,
     topology: location.topology, canonicalBaseUrl: location.canonicalBaseUrl
   });
-  await finalize(root, {
-    siteId: registration.siteId,
-    canonicalBaseUrl: registration.canonicalBaseUrl,
-    pathPrefix: registration.pathPrefix,
-    topology
-  });
-  await writeWorkflow({
-    root, siteId: registration.siteId, timezone: configured.site.timezone, buildMode,
-    ...(actionRef == null ? {} : { actionRef })
-  });
+
   await installVariable({
     owner: repositoryOwner, repository: repositoryName, accessToken: github.accessToken,
     variableName: 'GALA_API_BASE_URL', variableValue: gala.apiBaseUrl
   });
-  const commitSha = await commit(root);
-  const pages = buildMode === 'build-and-deploy' ? await provisionPages({
+
+  // Brings the server's provisioning commits into the checkout, so the writer's working copy holds
+  // the publication as it actually exists, and reports the commit publishing will run against.
+  const commitSha = await sync(root, { accessToken: github.accessToken });
+
+  /*
+   * Pages is only touched for a custom domain.
+   *
+   * On the provider default it was never doing anything: publishing creates a `gh-pages` branch and
+   * GitHub turns on classic Pages by itself — every scaffold produced a live site with
+   * `build_type: legacy, source: gh-pages` before this step ran, including runs that failed before
+   * reaching it. What the step did cost was up to ten minutes waiting on a workflow run, and a
+   * reported failure for a publication that was already serving.
+   *
+   * A custom domain is different: classic Pages will not point itself at someone's own hostname, so
+   * the API call is the thing that does it.
+   */
+  const pages = location.topology === 'CUSTOM_DOMAIN' ? await provisionPages({
     owner: repositoryOwner, repository: repositoryName, accessToken: github.accessToken, commitSha,
-    customDomain: location.topology === 'CUSTOM_DOMAIN' ? new URL(location.canonicalBaseUrl).hostname : null
+    customDomain: new URL(location.canonicalBaseUrl).hostname
   }) : null;
   return Object.freeze({
     root, fullName: generated.fullName, siteId: registration.siteId, commitSha, pages
