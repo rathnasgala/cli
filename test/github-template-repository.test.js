@@ -118,3 +118,36 @@ test('clones without a shell and reports process failure', async () => {
     /code 128/
   );
 });
+
+test('a refused generation reports what GitHub said, not just that it was refused', async () => {
+  /*
+   * Driven with a real Response rather than a hand-written stub, because the whole point is that
+   * the body survives — and a fake that omits clone()/text() would pass while the real thing
+   * silently dropped the detail.
+   *
+   * This is the 403 a scaffold hits when the organisation owning the template has OAuth App access
+   * restrictions on. "GitHub template generation failed with HTTP 403" is indistinguishable from a
+   * missing scope, a rename or a rate limit; GitHub's own sentence is not.
+   */
+  const body = JSON.stringify({
+    message: 'Although you appear to have the correct authorization credentials, the `rathnasgala` '
+      + 'organization has enabled OAuth App access restrictions.',
+    documentation_url: 'https://docs.github.com/articles/restricting-access-to-your-organization-s-data/'
+  });
+
+  await assert.rejects(
+    generateRepositoryFromTemplate({
+      accessToken: 'gho_token',
+      templateOwner: 'rathnasgala',
+      templateRepository: 'site-template',
+      owner: 'saranfrog2',
+      repository: 'cli67test',
+      fetchImpl: async () => new Response(body, {
+        status: 403, headers: { 'content-type': 'application/json' }
+      })
+    }),
+    (error) => /HTTP 403/.test(error.message)
+      && /OAuth App access restrictions/.test(error.message)
+      && /docs\.github\.com/.test(error.message)
+  );
+});

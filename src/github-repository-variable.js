@@ -1,3 +1,4 @@
+import { describeHttpFailure } from './http-failure.js';
 const GITHUB_API_VERSION = '2026-03-10';
 const OWNER_OR_REPOSITORY = /^[A-Za-z0-9_.-]+$/;
 const VARIABLE_NAME = /^[A-Z_][A-Z0-9_]*$/;
@@ -42,7 +43,7 @@ export async function installRepositoryVariable({
   });
   if (update.ok) return;
   if (update.status !== 404) {
-    throw new Error(`GitHub repository variable update failed with HTTP ${update.status}`);
+    throw new Error(await describeHttpFailure(update, 'GitHub repository variable update'));
   }
   const create = await fetchImpl(baseUrl, {
     method: 'POST',
@@ -50,6 +51,6 @@ export async function installRepositoryVariable({
     body: JSON.stringify({ name: normalizedName, value })
   });
   if (!create.ok) {
-    throw new Error(`GitHub repository variable creation failed with HTTP ${create.status}`);
+    throw new Error(await describeHttpFailure(create, 'GitHub repository variable creation'));
   }
 }

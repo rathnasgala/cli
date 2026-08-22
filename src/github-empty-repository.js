@@ -1,4 +1,5 @@
 import { spawn } from 'node:child_process';
+import { describeHttpFailure } from './http-failure.js';
 
 const API_VERSION = '2026-03-10';
 
@@ -11,7 +12,7 @@ export async function verifyEmptyRepository({ owner, repository, accessToken, fe
   const response = await fetchImpl(repositoryUrl, {
     headers
   });
-  if (!response.ok) throw new Error(`GitHub repository lookup failed with HTTP ${response.status}`);
+  if (!response.ok) throw new Error(await describeHttpFailure(response, 'GitHub repository lookup'));
   const payload = await response.json();
   if (payload.full_name?.toLowerCase() !== `${owner}/${repository}`.toLowerCase()) {
     throw new TypeError('GitHub returned an unexpected repository');
@@ -21,7 +22,7 @@ export async function verifyEmptyRepository({ owner, repository, accessToken, fe
       ...headers
     }
   });
-  if (!branchesResponse.ok) throw new Error(`GitHub branch lookup failed with HTTP ${branchesResponse.status}`);
+  if (!branchesResponse.ok) throw new Error(await describeHttpFailure(branchesResponse, 'GitHub branch lookup'));
   const branches = await branchesResponse.json();
   if (payload.size !== 0 || !Array.isArray(branches) || branches.length !== 0) {
     throw new Error('Existing repository is not empty; explicit non-empty adoption is not implemented');

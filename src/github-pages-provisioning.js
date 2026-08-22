@@ -1,3 +1,4 @@
+import { describeHttpFailure } from './http-failure.js';
 const GITHUB_API_VERSION = '2026-03-10';
 const SEGMENT = /^[A-Za-z0-9_.-]+$/;
 const SHA = /^[0-9a-f]{40}$/;
@@ -19,7 +20,7 @@ function headers(accessToken) {
 }
 
 async function json(response, operation) {
-  if (!response.ok) throw new Error(`GitHub ${operation} failed with HTTP ${response.status}`);
+  if (!response.ok) throw new Error(await describeHttpFailure(response, `GitHub ${operation}`));
   return response.json();
 }
 
@@ -86,7 +87,7 @@ export async function provisionGithubPages({
     return Object.freeze({ created: false, url: configuration.html_url, runUrl: run.html_url });
   }
   if (current.status !== 404) {
-    throw new Error(`GitHub Pages configuration request failed with HTTP ${current.status}`);
+    throw new Error(await describeHttpFailure(current, 'GitHub Pages configuration request'));
   }
   const created = await fetchImpl(`${repositoryUrl}/pages`, {
     method: 'POST', headers: requestHeaders,

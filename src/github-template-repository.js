@@ -1,5 +1,6 @@
 import { spawn } from 'node:child_process';
 import path from 'node:path';
+import { describeHttpFailure } from './http-failure.js';
 
 const GITHUB_API_VERSION = '2026-03-10';
 const REPOSITORY_IDENTITY = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
@@ -57,7 +58,7 @@ export async function generateRepositoryFromTemplate({
     }
   );
   if (response.status !== 201) {
-    throw new Error(`GitHub template generation failed with HTTP ${response.status}`);
+    throw new Error(await describeHttpFailure(response, 'GitHub template generation'));
   }
   const payload = await response.json();
   if (payload == null || Array.isArray(payload) || typeof payload !== 'object') {

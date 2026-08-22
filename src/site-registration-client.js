@@ -1,3 +1,4 @@
+import { describeHttpFailure } from './http-failure.js';
 const ULID = /^[0-7][0-9A-HJKMNP-TV-Z]{25}$/;
 const REPOSITORY_PART = /^[A-Za-z0-9_.-]+$/;
 const IDEMPOTENCY_KEY = /^[A-Za-z0-9._:-]{16,128}$/;
@@ -34,7 +35,7 @@ async function authorizeGitHub({ apiBaseUrl, galaAccessToken, githubAccessToken,
     throw new Error('GitHub or Gala authentication expired; run `gala auth` again');
   }
   if (response.status !== 200) {
-    throw new Error(`GitHub repository authorization failed with HTTP ${response.status}`);
+    throw new Error(await describeHttpFailure(response, 'GitHub repository authorization'));
   }
   const payload = await response.json();
   return required(payload?.authorization, 'GitHub authorization', /^[A-Za-z0-9_-]{43}$/);
@@ -103,7 +104,7 @@ export async function registerSite({
     }
     throw new Error('Site registration conflicts with existing protected state; use the recovery command');
   }
-  if (response.status !== 201) throw new Error(`Gala site registration failed with HTTP ${response.status}`);
+  if (response.status !== 201) throw new Error(await describeHttpFailure(response, 'Gala site registration'));
   const payload = await response.json();
   if (!ULID.test(payload?.siteId) || typeof payload.siteSecret !== 'string' || payload.siteSecret === '') {
     throw new TypeError('Gala site registration response is invalid');

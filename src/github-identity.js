@@ -1,3 +1,4 @@
+import { describeHttpFailure } from './http-failure.js';
 const GITHUB_API_VERSION = '2026-03-10';
 
 /**
@@ -19,7 +20,7 @@ export async function resolveGithubLogin({ accessToken, fetchImpl = fetch }) {
       'x-github-api-version': GITHUB_API_VERSION
     }
   });
-  if (!response.ok) throw new Error(`GitHub account lookup failed with HTTP ${response.status}`);
+  if (!response.ok) throw new Error(await describeHttpFailure(response, 'GitHub account lookup'));
   const payload = await response.json();
   const login = payload?.login;
   // The same shape `scaffold` demands of `--owner`. Refusing here beats a confusing failure four
