@@ -10,7 +10,23 @@ import {
 } from '../src/github-template-repository.js';
 
 function response(payload, status = 201) {
-  return { status, json: async () => payload };
+  return { status, ok: status >= 200 && status < 300, json: async () => payload };
+}
+
+/**
+ * Serves the generate call from `payload`, and the readiness poll that follows it from a
+ * repository that already has a branch. Generation is asynchronous, so every successful generate
+ * makes both calls.
+ */
+function generated(payload, status = 201) {
+  let first = true;
+  return async () => {
+    if (first) {
+      first = false;
+      return response(payload, status);
+    }
+    return response([{ name: 'main' }], 200);
+  };
 }
 
 test('generates a public repository from the configured template through the GitHub API', async () => {
@@ -23,6 +39,7 @@ test('generates a public repository from the configured template through the Git
     repository: 'notes',
     description: 'Engineering notes',
     fetchImpl: async (url, options) => {
+      if (String(url).includes('/branches')) return response([{ name: 'main' }], 200);
       request = { url, options };
       return response({
         full_name: 'author/notes',
@@ -149,5 +166,65 @@ test('a refused generation reports what GitHub said, not just that it was refuse
     (error) => /HTTP 403/.test(error.message)
       && /OAuth App access restrictions/.test(error.message)
       && /docs\.github\.com/.test(error.message)
+  );
+});
+
+test('waits for the generated repository to contain the template before returning', async () => {
+  /*
+   * Generating from a template is asynchronous. GitHub answered 201 with a clone URL and the
+   * repository was still empty, so the clone produced "You appear to have cloned an empty
+   * repository" and scaffolding died on a missing site.config.yml — a file the template certainly
+   * contains. Readiness is a branch existing; `size` stayed 0 on a repository that already had
+   * `main` and commits, so it cannot be used.
+   */
+  const calls = [];
+  let branchLookups = 0;
+  const result = await generateRepositoryFromTemplate({
+    accessToken: 'gho_token',
+    templateOwner: 'rathnasgala',
+    templateRepository: 'site-template',
+    owner: 'saranfrog2',
+    repository: 'cli67test',
+    sleep: async () => {},
+    readinessIntervalMs: 0,
+    fetchImpl: async (url) => {
+      calls.push(String(url));
+      if (String(url).endsWith('/generate')) {
+        return new Response(JSON.stringify({
+          full_name: 'saranfrog2/cli67test',
+          clone_url: 'https://github.com/saranfrog2/cli67test.git'
+        }), { status: 201, headers: { 'content-type': 'application/json' } });
+      }
+      branchLookups += 1;
+      // Empty twice, then populated: exactly the race that broke the real run.
+      return new Response(JSON.stringify(branchLookups < 3 ? [] : [{ name: 'main' }]),
+        { status: 200, headers: { 'content-type': 'application/json' } });
+    }
+  });
+
+  assert.equal(result.fullName, 'saranfrog2/cli67test');
+  assert.equal(branchLookups, 3);
+  assert.ok(calls.some((url) => url.includes('/branches?per_page=1')));
+});
+
+test('gives up on a template copy that never lands, and says what to do next', async () => {
+  await assert.rejects(
+    generateRepositoryFromTemplate({
+      accessToken: 'gho_token',
+      templateOwner: 'rathnasgala',
+      templateRepository: 'site-template',
+      owner: 'saranfrog2',
+      repository: 'cli67test',
+      sleep: async () => {},
+      readinessAttempts: 3,
+      readinessIntervalMs: 0,
+      fetchImpl: async (url) => String(url).endsWith('/generate')
+        ? new Response(JSON.stringify({
+          full_name: 'saranfrog2/cli67test',
+          clone_url: 'https://github.com/saranfrog2/cli67test.git'
+        }), { status: 201, headers: { 'content-type': 'application/json' } })
+        : new Response('[]', { status: 200, headers: { 'content-type': 'application/json' } })
+    }),
+    /still empty after .*--resume/s
   );
 });

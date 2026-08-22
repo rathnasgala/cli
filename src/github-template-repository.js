@@ -27,7 +27,10 @@ export async function generateRepositoryFromTemplate({
   owner,
   repository,
   description,
-  fetchImpl = fetch
+  fetchImpl = fetch,
+  sleep,
+  readinessAttempts,
+  readinessIntervalMs
 }) {
   const token = requiredString(accessToken, 'accessToken');
   const sourceOwner = repositorySegment(templateOwner, 'templateOwner');
@@ -85,7 +88,51 @@ export async function generateRepositoryFromTemplate({
     throw new TypeError('GitHub repository response contains an invalid clone_url');
   }
 
+  // Last, so a malformed response fails immediately instead of after the readiness wait.
+  await awaitRepositoryContent({
+    accessToken: token, owner: targetOwner, repository: targetRepository, fetchImpl,
+    ...(sleep == null ? {} : { sleep }),
+    ...(readinessAttempts == null ? {} : { attempts: readinessAttempts }),
+    ...(readinessIntervalMs == null ? {} : { intervalMs: readinessIntervalMs })
+  });
+
   return Object.freeze({ fullName, cloneUrl: cloneUrl.href });
+}
+
+/**
+ * Waits for a generated repository to actually contain the template.
+ *
+ * Generating from a template is asynchronous: GitHub answers 201 with the repository's full name
+ * and clone URL, and copies the content in afterwards. Cloning on the 201 produced
+ * "warning: You appear to have cloned an empty repository", and scaffolding then failed on a
+ * missing site.config.yml — a confusing error about a file the template certainly contains.
+ *
+ * Readiness is the presence of a branch. `size` is not usable: GitHub still reported 0 for a
+ * repository that already had `main` and commits.
+ */
+export async function awaitRepositoryContent({
+  accessToken, owner, repository, fetchImpl = fetch,
+  sleep = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds)),
+  attempts = 30, intervalMs = 1_000
+}) {
+  const url = `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repository)}/branches?per_page=1`;
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    if (attempt > 0) await sleep(intervalMs);
+    const response = await fetchImpl(url, {
+      headers: {
+        accept: 'application/vnd.github+json',
+        authorization: `Bearer ${accessToken}`,
+        'x-github-api-version': GITHUB_API_VERSION
+      }
+    });
+    if (!response.ok) throw new Error(await describeHttpFailure(response, 'GitHub branch lookup'));
+    const branches = await response.json();
+    if (Array.isArray(branches) && branches.length > 0) return;
+  }
+  throw new Error(
+    `GitHub created ${owner}/${repository} from the template but it was still empty after `
+    + `${Math.round((attempts * intervalMs) / 1000)}s. Re-run scaffold with --resume once it has content.`
+  );
 }
 
 export function cloneRepository({ cloneUrl, target, spawnProcess = spawn }) {

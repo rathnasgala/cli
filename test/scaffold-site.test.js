@@ -11,9 +11,13 @@ test('orchestrates template, API-owned secret provisioning, workflow, and reposi
     siteOptions: { siteName: 'Smoke', timezone: 'America/Los_Angeles' },
     readGithub: async () => ({ accessToken: 'github-token', scopes: ['repo', 'workflow'] }),
     readGala: async () => ({ accessToken: 'gala-token', apiBaseUrl: 'https://api.gala67.com/' }),
-    generate: async (input) => { calls.push(['generate', input]); return {
+    // Repository creation goes through the API now — the same call the browser editor makes —
+    // which also reports the installation that owns the result.
+    createRepository: async (input) => { calls.push(['create', input]); return {
+      owner: 'rathnasgala', repository: 'smoke01', installationId: 153144989, outcome: 'CREATED_FROM_TEMPLATE',
       fullName: 'rathnasgala/smoke01', cloneUrl: 'https://github.com/rathnasgala/smoke01.git'
     }; },
+    awaitContent: async (input) => { calls.push(['await-content', input]); },
     clone: async (input) => { calls.push(['clone', input]); return '/tmp/smoke01'; },
     configure: async (root, options) => { calls.push(['configure', root, options]); return {
       site: { timezone: 'America/Los_Angeles' }
@@ -30,16 +34,22 @@ test('orchestrates template, API-owned secret provisioning, workflow, and reposi
   });
 
   assert.deepEqual(calls.map(([name]) => name), [
-    'generate', 'clone', 'configure', 'register', 'finalize', 'workflow', 'variable', 'commit', 'pages'
+    'create', 'await-content', 'clone', 'configure', 'register', 'finalize', 'workflow', 'variable',
+    'commit', 'pages'
   ]);
-  assert.equal(calls[3][1].topology, 'PROVIDER_DEFAULT');
-  assert.equal(calls[3][1].canonicalBaseUrl, 'https://rathnasgala.github.io');
-  assert.match(calls[3][1].idempotencyKey, /^scaffold-[0-9a-f]{64}$/);
-  assert.deepEqual(calls[6][1], {
+  // Content is awaited before the clone, or the checkout is empty.
+  assert.ok(calls.findIndex(([name]) => name === 'await-content')
+    < calls.findIndex(([name]) => name === 'clone'));
+  assert.equal(calls[4][1].topology, 'PROVIDER_DEFAULT');
+  assert.equal(calls[4][1].canonicalBaseUrl, 'https://rathnasgala.github.io');
+  assert.match(calls[4][1].idempotencyKey, /^scaffold-[0-9a-f]{64}$/);
+  // The installation the API reported at creation is the one registration is told about.
+  assert.equal(calls[4][1].githubInstallationId, 153144989);
+  assert.deepEqual(calls[7][1], {
     owner: 'rathnasgala', repository: 'smoke01', accessToken: 'github-token',
     variableName: 'GALA_API_BASE_URL', variableValue: 'https://api.gala67.com/'
   });
-  assert.equal(calls[8][1].commitSha, '0123456789abcdef0123456789abcdef01234567');
+  assert.equal(calls[9][1].commitSha, '0123456789abcdef0123456789abcdef01234567');
   assert.equal(result.siteId, '01K00000000000000000000000');
 });
 
@@ -175,4 +185,52 @@ test('rejects conflicting initial-adoption and resume modes before mutation', as
     siteOptions: {}, readGithub: async () => ({ accessToken: 'github-token' }),
     readGala: async () => ({ accessToken: 'gala-token' })
   }), /mutually exclusive/);
+});
+
+test('the server decides the owner and name, and everything downstream follows it', async () => {
+  /*
+   * The API creates under the account the Gala App installation belongs to, which is not always the
+   * account behind the writer's OAuth token — an installation on an organisation they belong to
+   * gives a different owner. Deriving the canonical URL, idempotency key, registration and Pages
+   * target from the local guess registers a publication against a repository that does not exist.
+   */
+  const calls = [];
+  const result = await scaffoldSite({
+    owner: 'guessed-user', repository: 'guessed-name', target: '/tmp/actual',
+    siteOptions: { timezone: 'UTC' },
+    readGithub: async () => ({ accessToken: 'github-token', scopes: ['repo', 'workflow'] }),
+    readGala: async () => ({ accessToken: 'gala-token', apiBaseUrl: 'https://api.gala67.com' }),
+    createRepository: async () => ({
+      owner: 'actual-org', repository: 'actual-name', installationId: 155579156,
+      outcome: 'CREATED_FROM_TEMPLATE',
+      fullName: 'actual-org/actual-name',
+      cloneUrl: 'https://github.com/actual-org/actual-name.git'
+    }),
+    awaitContent: async (input) => calls.push(['await-content', input]),
+    clone: async (input) => { calls.push(['clone', input]); return '/tmp/actual'; },
+    configure: async () => ({ site: { timezone: 'UTC' } }),
+    register: async (input) => { calls.push(['register', input]); return {
+      siteId: '01K00000000000000000000000', siteSecret: 's',
+      canonicalBaseUrl: 'https://actual-org.github.io', pathPrefix: '/actual-name'
+    }; },
+    finalize: async () => {},
+    writeWorkflow: async () => {},
+    installVariable: async (input) => calls.push(['variable', input]),
+    commit: async () => '0123456789abcdef0123456789abcdef01234567',
+    provisionPages: async (input) => { calls.push(['pages', input]); return { created: true }; }
+  });
+
+  const register = calls.find(([name]) => name === 'register')[1];
+  assert.equal(register.repositoryOwner, 'actual-org');
+  assert.equal(register.repositoryName, 'actual-name');
+  // The provider-default origin is derived from the real owner, not the guess.
+  assert.equal(register.canonicalBaseUrl, 'https://actual-org.github.io');
+  assert.equal(register.githubInstallationId, 155579156);
+
+  assert.equal(calls.find(([name]) => name === 'variable')[1].owner, 'actual-org');
+  assert.equal(calls.find(([name]) => name === 'pages')[1].owner, 'actual-org');
+  assert.equal(calls.find(([name]) => name === 'pages')[1].repository, 'actual-name');
+  assert.equal(calls.find(([name]) => name === 'clone')[1].cloneUrl,
+    'https://github.com/actual-org/actual-name.git');
+  assert.equal(result.fullName, 'actual-org/actual-name');
 });

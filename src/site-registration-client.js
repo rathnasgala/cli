@@ -18,7 +18,14 @@ function apiUrl(apiBaseUrl) {
   return new URL('/v1/sites', base).href;
 }
 
-async function authorizeGitHub({ apiBaseUrl, galaAccessToken, githubAccessToken, fetchImpl }) {
+/**
+ * Exchanges the stored GitHub token for the short-lived capability the API's GitHub-scoped
+ * endpoints require. Exported because publication creation needs the same capability, and two
+ * copies of an auth exchange is how they drift.
+ */
+export async function exchangeGithubAuthorization({
+  apiBaseUrl, galaAccessToken, githubAccessToken, fetchImpl
+}) {
   if (typeof githubAccessToken !== 'string' || githubAccessToken === '') {
     throw new Error('GitHub authentication is missing; run `gala auth`');
   }
@@ -56,7 +63,7 @@ export async function registerSite({
   if (typeof galaAccessToken !== 'string' || galaAccessToken === '') {
     throw new Error('Gala authentication is missing; run `gala auth`');
   }
-  const githubAuthorization = await authorizeGitHub({
+  const githubAuthorization = await exchangeGithubAuthorization({
     apiBaseUrl, galaAccessToken, githubAccessToken, fetchImpl
   });
   required(idempotencyKey, 'idempotencyKey', IDEMPOTENCY_KEY);
