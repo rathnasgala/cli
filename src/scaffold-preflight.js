@@ -5,7 +5,6 @@ import { authenticateGithub } from './github-auth-command.js';
 import { readGalaCredential } from './gala-credential-store.js';
 import { readGithubCredential } from './github-credential-store.js';
 import { resolveGithubLogin } from './github-identity.js';
-import { resolveInstallationId } from './gala-installation-client.js';
 import { galaCredentialAccepted } from './gala-credential-health.js';
 import { openInBrowser } from './open-browser.js';
 import { forgetGalaCredential } from './gala-credential-store.js';
@@ -36,8 +35,6 @@ export async function prepareScaffold({
   cwd = process.cwd(),
   notify = () => {},
   ask,
-  installUrl = GITHUB_APP_INSTALL_URL,
-  installAttempts = 3,
   openUrl = openInBrowser,
   readGala = readGalaCredential,
   readGithub = readGithubCredential,
@@ -46,7 +43,6 @@ export async function prepareScaffold({
   signInGala = authenticateGala,
   signInGithub = authenticateGithub,
   resolveLogin = resolveGithubLogin,
-  resolveInstallation = resolveInstallationId,
   apiBaseUrl = DEFAULT_API_BASE_URL
 } = {}) {
   const gala = await ensureGala({
@@ -65,20 +61,18 @@ export async function prepareScaffold({
   // directory the writer is standing in. Everywhere else the repository names its own folder.
   const resolvedTarget = target ?? `./${resolvedRepository}`;
 
-  const resolvedInstallation = githubInstallationId
-    ?? await ensureInstallation({
-      apiBaseUrl: gala.apiBaseUrl ?? apiBaseUrl,
-      galaAccessToken: gala.accessToken,
-      githubAccessToken: github.accessToken,
-      owner: resolvedOwner,
-      notify, ask, installUrl, installAttempts, resolveInstallation, openUrl
-    });
-
+  /*
+   * No installation lookup. The id is an internal GitHub identifier for an App the server owns, and
+   * nothing here can discover it reliably: a GitHub App token could list installations and the CLI
+   * cannot hold one, while the repository inventory only carries the id once a repository exists —
+   * which, in the flow that creates the first repository, is never. The server resolves it during
+   * registration. `--installation-id` still overrides, for an account with several.
+   */
   return Object.freeze({
     owner: resolvedOwner,
     repository: resolvedRepository,
     target: resolvedTarget,
-    githubInstallationId: resolvedInstallation
+    githubInstallationId: githubInstallationId ?? null
   });
 }
 
@@ -131,47 +125,6 @@ async function ensureGithub({ notify, readGithub, signInGithub, openUrl }) {
     });
     return readGithub();
   }
-}
-
-/**
- * Confirms the Gala GitHub App is installed, walking the writer through installing it if not.
- *
- * This is the step that used to be a manual detour through GitHub's settings to copy a number out
- * of a redirect URL. The loop is what makes it a step rather than a failure: the writer installs
- * the App in the browser, comes back, presses enter, and the run continues.
- */
-async function ensureInstallation({
-  apiBaseUrl, galaAccessToken, githubAccessToken, owner,
-  notify, ask, installUrl, installAttempts, resolveInstallation, openUrl
-}) {
-  for (let attempt = 0; attempt < Math.max(1, installAttempts); attempt += 1) {
-    const installationId = await resolveInstallation({
-      apiBaseUrl, galaAccessToken, githubAccessToken, owner
-    });
-    if (installationId != null) return installationId;
-
-    if (typeof ask !== 'function') {
-      throw new Error(
-        `The Gala GitHub App is not installed on ${owner}. Install it at ${installUrl} and run `
-        + 'scaffold again, or pass --installation-id explicitly.'
-      );
-    }
-
-    // An installation belongs to one account. Installing it on a personal account when the
-    // publication is meant for an organisation looks like it worked and changes nothing here, so
-    // the account being checked is named every time rather than assumed.
-    notify(attempt === 0
-      ? `The Gala GitHub App is not installed on ${owner} yet.`
-      : `Still not seeing the App on ${owner}. Check that you installed it on ${owner} itself `
-        + 'and not on another account or organisation you belong to.');
-    notify(`${openUrl(installUrl) ? 'Opened' : 'Open'} ${installUrl}`);
-    await ask('Press enter once the App is installed. ');
-  }
-  throw new Error(
-    `The Gala GitHub App still does not cover ${owner}. Install it at ${installUrl} for ${owner} `
-    + 'specifically, then run scaffold again. If the App is installed under a different account, '
-    + 'pass --owner for that account, or --installation-id to name the installation directly.'
-  );
 }
 
 /** GitHub repository names allow letters, digits, dot, underscore and hyphen, and nothing else. */

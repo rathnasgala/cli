@@ -61,7 +61,8 @@ export async function registerSite({
   required(idempotencyKey, 'idempotencyKey', IDEMPOTENCY_KEY);
   required(repositoryOwner, 'repositoryOwner', REPOSITORY_PART);
   required(repositoryName, 'repositoryName', REPOSITORY_PART);
-  if (!Number.isSafeInteger(githubInstallationId) || githubInstallationId <= 0) {
+  if (githubInstallationId != null
+      && (!Number.isSafeInteger(githubInstallationId) || githubInstallationId <= 0)) {
     throw new TypeError('githubInstallationId must be a positive integer');
   }
   if (!['PROVIDER_DEFAULT', 'CUSTOM_DOMAIN'].includes(topology)) {
@@ -77,7 +78,8 @@ export async function registerSite({
       'idempotency-key': idempotencyKey
     },
     body: JSON.stringify({
-      githubInstallationId,
+      // Omitted rather than sent as null: the server resolves it from the owner.
+      ...(githubInstallationId == null ? {} : { githubInstallationId }),
       repositoryOwner,
       repositoryName,
       topology,
@@ -91,6 +93,14 @@ export async function registerSite({
     throw new Error(`GitHub App installation does not cover ${repositoryOwner}/${repositoryName}`);
   }
   if (response.status === 409) {
+    const failure = await response.clone().json().catch(() => null);
+    if (failure?.code === 'GITHUB_APP_NOT_INSTALLED') {
+      throw new Error(
+        `The Gala GitHub App is not installed on ${repositoryOwner}. Install it at `
+        + 'https://github.com/apps/gala67-app/installations/new for that account, then run scaffold '
+        + 'again.'
+      );
+    }
     throw new Error('Site registration conflicts with existing protected state; use the recovery command');
   }
   if (response.status !== 201) throw new Error(`Gala site registration failed with HTTP ${response.status}`);

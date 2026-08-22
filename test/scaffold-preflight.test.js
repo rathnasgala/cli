@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import path from 'node:path';
 import test from 'node:test';
 
-import { GITHUB_APP_INSTALL_URL, prepareScaffold, repositoryNameFrom } from '../src/scaffold-preflight.js';
+import { prepareScaffold, repositoryNameFrom } from '../src/scaffold-preflight.js';
 
 const gala = { accessToken: 'gala-token', apiBaseUrl: 'https://api.gala67.com' };
 const github = { accessToken: 'github-token', scopes: ['repo', 'workflow'] };
@@ -12,7 +12,6 @@ function stubs(overrides = {}) {
     readGala: async () => gala,
     readGithub: async () => github,
     resolveLogin: async () => 'rathnasgala',
-    resolveInstallation: async () => 153144989,
     openUrl: () => false,
     credentialAccepted: async () => true,
     forgetGala: async () => {},
@@ -32,7 +31,7 @@ test('derives owner, repository, target and installation id from nothing but --t
     // `--target ./` means "here", so the directory the writer is standing in names the repository.
     repository: 'field-notes',
     target: './',
-    githubInstallationId: 153144989
+    githubInstallationId: null
   });
 });
 
@@ -116,7 +115,6 @@ test('signs in to Gala and GitHub when no credential is stored, then re-reads it
       githubStored = true;
     },
     resolveLogin: async () => 'rathnasgala',
-    resolveInstallation: async () => 153144989,
     openUrl: () => false,
     apiBaseUrl: 'https://api.gala67.com'
   });
@@ -138,43 +136,8 @@ test('does not sign in again when both credentials are already stored', async ()
   });
 });
 
-test('walks the writer through installing the App, then continues with the id it finds', async () => {
-  const messages = [];
-  const questions = [];
-  let installed = false;
-
-  const prepared = await prepareScaffold({
-    repository: 'field-notes',
-    notify: (message) => messages.push(message),
-    ask: async (question) => { questions.push(question); installed = true; return ''; },
-    ...stubs({ resolveInstallation: async () => (installed ? 153144989 : null) })
-  });
-
-  assert.equal(prepared.githubInstallationId, 153144989);
-  assert.equal(questions.length, 1);
-  assert.ok(messages.some((message) => message.includes(GITHUB_APP_INSTALL_URL)));
-  assert.ok(messages.some((message) => message.includes('not installed')));
-});
-
-test('gives up with an actionable message rather than looping forever', async () => {
-  const questions = [];
-  await assert.rejects(
-    prepareScaffold({
-      repository: 'field-notes',
-      installAttempts: 2,
-      ask: async (question) => { questions.push(question); return ''; },
-      ...stubs({ resolveInstallation: async () => null })
-    }),
-    (error) => error.message.includes(GITHUB_APP_INSTALL_URL) && /still does not cover/.test(error.message)
-  );
-  assert.equal(questions.length, 2);
-});
 
 test('never blocks on a prompt when there is no terminal to answer it', async () => {
-  await assert.rejects(
-    prepareScaffold({ repository: 'field-notes', ...stubs({ resolveInstallation: async () => null }) }),
-    /Install it at .*installations\/new .*--installation-id/s
-  );
   await assert.rejects(
     prepareScaffold({ ...stubs() }),
     /repository is required; pass --repository or --site-name/
@@ -230,34 +193,6 @@ test('does not sign in again when the server still accepts the stored credential
   });
 });
 
-test('a repeated installation check says it is still looking, and names the account it checks', async () => {
-  // The reported symptom: the same sentence three times running, with nothing to suggest the App
-  // might have been installed on a different account than the one being checked.
-  const messages = [];
-  const opened = [];
-  await assert.rejects(
-    prepareScaffold({
-      repository: 'field-notes',
-      installAttempts: 3,
-      notify: (message) => messages.push(message),
-      ask: async () => '',
-      ...stubs({
-        resolveLogin: async () => 'saranfrog2',
-        resolveInstallation: async () => null,
-        openUrl: (url) => { opened.push(url); return true; }
-      })
-    }),
-    /--installation-id/
-  );
-
-  const distinct = new Set(messages.filter((message) => !message.startsWith('Opened')));
-  assert.equal(distinct.size, 2, 'the retry must not repeat the first message verbatim');
-  assert.ok(messages.some((message) => message.includes('not installed on saranfrog2')));
-  assert.ok(messages.some((message) => message.includes('Still not seeing the App on saranfrog2')));
-  assert.ok(messages.some((message) => message.includes('organisation')));
-  assert.equal(opened.length, 3, 'the installation page opens on every attempt');
-});
-
 test('opens the sign-in pages instead of asking for the URL to be copied', async () => {
   const messages = [];
   const opened = [];
@@ -286,7 +221,6 @@ test('opens the sign-in pages instead of asking for the URL to be copied', async
       githubStored = true;
     },
     resolveLogin: async () => 'rathnasgala',
-    resolveInstallation: async () => 153144989,
     credentialAccepted: async () => true,
     forgetGala: async () => {}
   });
@@ -298,4 +232,36 @@ test('opens the sign-in pages instead of asking for the URL to be copied', async
   // The URL is still printed: it is the thing a writer moves to another device.
   assert.ok(messages.some((m) => m.includes('Opened https://github.com/login/device')));
   assert.ok(messages.some((m) => m.includes('BBBB-2222')));
+});
+
+/*
+ * The installation-lookup tests that used to live here are gone with the code they covered.
+ *
+ * `prepareScaffold` derived the installation id from the API's per-repository inventory, which
+ * carries it only once a repository exists — and during scaffolding none does. On a fresh account
+ * the inventory is empty, so the lookup answered "no installation" and the CLI told the writer to
+ * install an App that was already installed, indefinitely. The server resolves the id during
+ * registration now; nothing here has to.
+ */
+test('sends no installation id at all unless one was given explicitly', async () => {
+  const derived = await prepareScaffold({ repository: 'field-notes', ...stubs() });
+  assert.equal(derived.githubInstallationId, null);
+
+  const explicit = await prepareScaffold({
+    repository: 'field-notes', githubInstallationId: 999, ...stubs()
+  });
+  assert.equal(explicit.githubInstallationId, 999);
+});
+
+test('a fresh account with no repositories still gets through preflight', async () => {
+  // The reported failure: saranfrog2 had the App installed and owned no repositories, so every
+  // attempt reported it as uninstalled. Preflight no longer asks the question.
+  const messages = [];
+  const prepared = await prepareScaffold({
+    repository: 'field-notes',
+    notify: (message) => messages.push(message),
+    ...stubs({ resolveLogin: async () => 'saranfrog2' })
+  });
+  assert.equal(prepared.owner, 'saranfrog2');
+  assert.ok(!messages.some((message) => /not installed|Still not seeing/.test(message)));
 });

@@ -62,7 +62,10 @@ export async function scaffoldSite({
   const repositoryOwner = segment(owner, 'owner');
   const repositoryName = segment(repository, 'repository');
   const location = registrationLocation(repositoryOwner, topology, canonicalBaseUrl);
-  if (!Number.isSafeInteger(githubInstallationId) || githubInstallationId <= 0) {
+  // Optional: the server resolves the installation from the owner when none is supplied. An
+  // explicit value is still validated, because a wrong one fails much later and less clearly.
+  if (githubInstallationId != null
+      && (!Number.isSafeInteger(githubInstallationId) || githubInstallationId <= 0)) {
     throw new TypeError('githubInstallationId must be a positive integer');
   }
   if (target == null || path.resolve(target) === path.parse(path.resolve(target)).root) {
