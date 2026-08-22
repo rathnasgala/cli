@@ -2,53 +2,49 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 
+import { COMMANDS } from '../src/commands-manifest.js';
+
 const readme = await readFile(new URL('../README.md', import.meta.url), 'utf8');
 
-test('README documents every public CLI command and required setup', () => {
-  const commands = [
-    'auth', 'configure', 'entitlement', 'scaffold', 'topology', 'validate',
-    'new', 'doctor', 'hook', 'preview', 'publish', 'record-deployment',
-    'refresh', 'upgrade', 'workflow'
-  ];
-
-  for (const command of commands) {
-    assert.ok(readme.includes(`| \`gala ${command}`), command);
+test('documents every command that exists, and nothing that does not', () => {
+  /*
+   * v0's README outlived its commands by weeks: it taught a `connect` command that never existed,
+   * and kept documenting nine that had been removed. Documentation that drifts is worse than none —
+   * a writer trusts it and loses an afternoon. Nothing tied the two together until now.
+   */
+  // Matched as an invocation rather than as a word: "the publishing workflow" is a noun, and a
+  // removed command is only really still documented if a writer could try to run it.
+  const invoked = (name) => new RegExp(`(?:latest |\`)${name}\\b`);
+  for (const command of Object.keys(COMMANDS)) {
+    assert.match(readme, invoked(command), `README omits ${command}`);
   }
-
-  assert.match(readme, /https:\/\/github\.com\/apps\/gala67-app\/installations\/new/);
-  // Every value scaffold derives must still be documented as an override, or the escape hatch is
-  // undiscoverable for organisation-owned publications and multi-installation accounts.
-  for (const flag of ['--owner', '--repository', '--target', '--installation-id']) {
-    assert.ok(readme.includes(flag), flag);
-  }
-  assert.match(readme, /npx --yes @rathnasgala\/cli@latest auth github/);
-});
-
-test('README quick start is a single scaffold command that does not demand derived values', () => {
-  const quickStart = readme.slice(readme.indexOf('## Quick start'), readme.indexOf('## Command reference'));
-
-  const commands = [...quickStart.matchAll(/npx --yes @rathnasgala\/cli@latest ([a-z-]+)/g)]
-    .map((match) => match[1]);
-  assert.ok(commands.includes('scaffold'), 'quick start scaffolds');
-  // auth and auth github are no longer steps the writer performs; scaffold runs them when needed.
-  assert.ok(!commands.includes('auth'), 'quick start must not instruct a separate auth step');
-
-  const scaffoldBlock = quickStart.slice(quickStart.indexOf('latest scaffold'));
-  const firstBlockEnd = scaffoldBlock.indexOf('```');
-  const firstScaffold = scaffoldBlock.slice(0, firstBlockEnd);
-  for (const derived of ['--owner', '--installation-id', '--repository']) {
-    assert.ok(!firstScaffold.includes(derived), `quick start must not require ${derived}`);
+  for (const gone of ['scaffold', 'validate', 'workflow', 'record-deployment', 'configure',
+    'topology', 'refresh', 'entitlement', 'upgrade', 'connect']) {
+    assert.doesNotMatch(readme, invoked(gone), `README still documents ${gone}`);
   }
 });
 
-test('README runnable Gala examples work without a global installation', () => {
-  const consoleBlocks = [...readme.matchAll(/```console\n([\s\S]*?)```/g)]
-    .map((match) => match[1]);
+test('every documented option is one a command actually accepts', () => {
+  const known = new Set([
+    // Handled by the dispatcher rather than by any one command.
+    'help',
+    ...Object.values(COMMANDS).flatMap(({ flags = [], switches = [] }) => [...flags, ...switches])
+  ]);
 
-  for (const block of consoleBlocks) {
-    assert.doesNotMatch(block, /^gala(?:\s|$)/m);
+  // Requires a letter after the dashes, so Markdown frontmatter fences are not read as options.
+  for (const [, option] of readme.matchAll(/`--([a-z][a-z-]*)`/g)) {
+    assert.ok(known.has(option), `README documents --${option}, which no command accepts`);
   }
+});
 
-  assert.match(readme, /npx --yes @rathnasgala\/cli@latest scaffold/);
+test('every example runs without a global install', () => {
+  for (const [, block] of readme.matchAll(/```console\n([\s\S]*?)```/g)) {
+    for (const line of block.split('\n')) {
+      const command = line.trim();
+      if (command === '' || command.startsWith('#')) continue;
+      assert.doesNotMatch(command, /^gala\b/, `"${command}" assumes a global install`);
+    }
+  }
+  assert.match(readme, /npx --yes @rathnasgala\/cli@latest init/);
   assert.match(readme, /npx --yes @rathnasgala\/cli@latest publish/);
 });

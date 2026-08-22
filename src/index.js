@@ -1,310 +1,60 @@
 #!/usr/bin/env node
+import { UsageError, parseArguments } from './cli/args.js';
+import { createTerminal } from './cli/terminal.js';
+import { COMMANDS } from './commands-manifest.js';
 
-import { parseScaffoldOptions } from './scaffold-options.js';
-import { regenerateBuildManifest } from './validate-command.js';
-import { createPost } from './new-command.js';
-import {
-  diagnoseFramework,
-  diagnosePublicationState,
-  repairFramework
-} from './doctor-command.js';
-import { configureSite } from './configure-site.js';
-import { previewSite } from './preview-command.js';
-import { writePublishWorkflow } from './workflow-command.js';
-import { publishSite } from './publish-command.js';
-import { installPrePushHook } from './hook-command.js';
-import { reportRepositoryLimitWarnings } from './repository-limits.js';
-import { recordDeployment } from './record-deployment-command.js';
-import { authenticateGala } from './auth-command.js';
-import { createInterface } from 'node:readline/promises';
-import { upgradeTheme } from './upgrade-command.js';
-import { authenticateGithub } from './github-auth-command.js';
-import { scaffoldSite } from './scaffold-site.js';
-import { openInBrowser } from './open-browser.js';
-import { prepareScaffold } from './scaffold-preflight.js';
-import { refreshEngagementSnapshot } from './refresh-command.js';
-import { switchTopology } from './topology-command.js';
-import { acquireAttributionEntitlement } from './entitlement-command.js';
 
-/*
- * A failed command should say what went wrong and what to do about it. Node's default for a
- * rejected top-level await is a stack trace through node_modules, which tells a writer nothing and
- * buries the one line that matters. The stack is still available behind GALA_DEBUG for anyone
- * debugging the CLI itself.
- */
-process.on('uncaughtException', reportAndExit);
-process.on('unhandledRejection', reportAndExit);
+const [name, ...argv] = process.argv.slice(2);
+const terminal = createTerminal();
 
-function reportAndExit(failure) {
-  if (process.env.GALA_DEBUG) {
-    process.stderr.write(`${failure instanceof Error ? failure.stack : String(failure)}\n`);
-  } else {
-    const message = failure instanceof Error ? failure.message : String(failure);
-    process.stderr.write(`${message}\n`);
-  }
+if (name == null || name === 'help' || name === '--help' || name === '-h') {
+  usage();
+  process.exit(name == null ? 1 : 0);
+}
+
+const command = COMMANDS[name];
+if (command == null) {
+  terminal.fail(`there is no ${name} command`);
+  usage();
+  process.exit(1);
+}
+
+if (argv.includes('--help') || argv.includes('-h')) {
+  process.stdout.write(`\n  ${command.usage ?? `gala ${name}`}\n  ${command.summary}\n\n`);
+  process.exit(0);
+}
+
+try {
+  const options = parseArguments(argv, { flags: command.flags ?? [], switches: command.switches ?? [] });
+  await command.run({ terminal, options });
+} catch (failure) {
+  report(failure);
   process.exit(1);
 }
 
 /**
- * Opens the page and says so, or falls back to asking for it to be opened by hand. The URL is
- * printed either way — it is the thing the writer may need to move to another device.
+ * One line the writer can act on.
+ *
+ * A rejected top-level await prints a stack through node_modules by default, which buries the only
+ * line that matters. The stack is still there behind GALA_DEBUG for anyone debugging the CLI
+ * itself, which is a different audience from anyone trying to publish.
  */
-function announce(verificationUri, userCode) {
-  const opened = openInBrowser(verificationUri);
-  return `${opened ? 'Opened' : 'Open'} ${verificationUri}\nEnter code: ${userCode}\n`;
+function report(failure) {
+  if (process.env.GALA_DEBUG) {
+    process.stderr.write(`${failure instanceof Error ? failure.stack : String(failure)}\n`);
+    return;
+  }
+  terminal.fail(failure instanceof Error ? failure.message : String(failure));
+  // Captured output from a subprocess is the most useful thing on screen at exactly this moment.
+  if (typeof failure?.detail === 'string' && failure.detail !== '') {
+    for (const line of failure.detail.split('\n')) terminal.note(line);
+  }
+  if (failure instanceof UsageError) usage();
 }
 
-const [command, ...args] = process.argv.slice(2);
-const usage = 'Usage: gala <auth|configure|entitlement|scaffold|topology|validate|new|doctor|hook|preview|publish|record-deployment|refresh|upgrade|workflow> [options]';
-
-if (command === 'help' || command === '--help' || command === '-h'
-    || args.includes('--help') || args.includes('-h')) {
-  process.stdout.write(`${usage}\n`);
-  process.exit(0);
-}
-
-const recognizedCommands = new Set([
-  'auth', 'configure', 'validate', 'new', 'doctor', 'preview',
-  'workflow', 'publish', 'record-deployment', 'refresh', 'hook', 'upgrade', 'topology', 'entitlement'
-]);
-function commandRoot() {
-  const rootIndex = args.indexOf('--root');
-  if (rootIndex !== -1) return args[rootIndex + 1];
-  if (command === 'doctor' || command === 'validate') {
-    return args.find((argument, index) =>
-      !argument.startsWith('--')
-      && !['--today', '--source'].includes(args[index - 1])
-    ) ?? process.cwd();
-  }
-  return process.cwd();
-}
-if (recognizedCommands.has(command)) {
-  await reportRepositoryLimitWarnings(commandRoot());
-}
-
-if (command === 'auth') {
-  if (args[0] === 'github') {
-    await authenticateGithub({
-      showInstructions: ({ verificationUri, userCode }) => {
-        process.stdout.write(announce(verificationUri, userCode));
-      }
-    });
-    process.stdout.write('GitHub authentication stored securely.\n');
-  } else {
-    const apiIndex = args.indexOf('--api-base-url');
-    const apiBaseUrl = apiIndex === -1 ? 'https://api.gala67.com' : args[apiIndex + 1];
-    const result = await authenticateGala({
-      apiBaseUrl,
-      showInstructions: ({ verificationUri, userCode }) => {
-        process.stdout.write(announce(verificationUri, userCode));
-      }
-    });
-    process.stdout.write(`Gala authentication stored securely until ${result.expiresAt.toISOString()}.\n`);
-  }
-} else if (command === 'scaffold') {
-  const valueFor = (name) => {
-    const index = args.indexOf(name);
-    return index === -1 ? undefined : args[index + 1];
-  };
-  const explicitInstallationId = valueFor('--installation-id');
-  const topology = valueFor('--topology') ?? 'provider-default';
-  const siteOptions = parseScaffoldOptions(args);
-  // Prompting only makes sense at a terminal. In CI there is nobody to answer, so a missing value
-  // has to stay a clear error rather than a process that hangs waiting for enter.
-  const interactive = process.stdin.isTTY === true;
-  const ask = interactive
-    ? async (question) => {
-      const terminal = createInterface({ input: process.stdin, output: process.stdout });
-      try { return await terminal.question(question); } finally { terminal.close(); }
-    }
-    : undefined;
-  const prepared = await prepareScaffold({
-    owner: valueFor('--owner'),
-    repository: valueFor('--repository'),
-    target: valueFor('--target'),
-    githubInstallationId: explicitInstallationId == null ? undefined : Number(explicitInstallationId),
-    siteName: siteOptions.siteName,
-    apiBaseUrl: valueFor('--api-base-url') ?? 'https://api.gala67.com',
-    notify: (message) => process.stdout.write(`${message}\n`),
-    ask
-  });
-  const result = await scaffoldSite({
-    notify: (message) => process.stdout.write(`${message}\n`),
-    ask,
-    openUrl: openInBrowser,
-    owner: prepared.owner,
-    repository: prepared.repository,
-    target: prepared.target,
-    githubInstallationId: prepared.githubInstallationId,
-    topology,
-    canonicalBaseUrl: valueFor('--canonical-base-url'),
-    siteOptions,
-    emptyExistingRepository: args.includes('--empty-existing-repository'),
-    resumeExistingCheckout: args.includes('--resume')
-  });
-  await reportRepositoryLimitWarnings(result.root);
-  process.stdout.write(`Scaffolded ${result.fullName} as Gala site ${result.siteId} in ${result.root}.\n`);
-} else if (command === 'configure') {
-  const rootIndex = args.indexOf('--root');
-  const root = rootIndex === -1 ? process.cwd() : args[rootIndex + 1];
-  const options = parseScaffoldOptions(args);
-  const config = await configureSite(root, options);
-  process.stdout.write(`${JSON.stringify(config.design, null, 2)}\n`);
-} else if (command === 'topology') {
-  const valueFor = (name) => {
-    const index = args.indexOf(name);
-    return index === -1 ? undefined : args[index + 1];
-  };
-  const result = await switchTopology({
-    root: valueFor('--root') ?? process.cwd(),
-    owner: valueFor('--owner'),
-    repository: valueFor('--repository'),
-    canonicalBaseUrl: valueFor('--canonical-base-url'),
-    pathPrefix: valueFor('--path-prefix') ?? '/'
-  });
-  process.stdout.write(`Committed topology ${result.changeId} at ${result.commitSha}.\n`);
-} else if (command === 'entitlement') {
-  const rootIndex = args.indexOf('--root');
-  const result = await acquireAttributionEntitlement({
-    root: rootIndex === -1 ? process.cwd() : args[rootIndex + 1]
-  });
-  process.stdout.write(result.changed
-    ? `Stored the signed attribution entitlement for ${result.siteId}.\n`
-    : `Attribution entitlement for ${result.siteId} is current.\n`);
-} else if (command === 'validate') {
-  const todayIndex = args.indexOf('--today');
-  const today = todayIndex === -1 ? undefined : args[todayIndex + 1];
-  const root = args.find((argument) => !argument.startsWith('--') && argument !== today) ?? process.cwd();
-  const { results } = await regenerateBuildManifest({ root, today });
-  const failures = results.filter(({ errors }) => errors.length > 0);
-
-  for (const result of failures) {
-    for (const error of result.errors) process.stderr.write(`${result.file}: ${error}\n`);
-  }
-  for (const result of results) {
-    for (const warning of result.warnings) process.stderr.write(`${result.file}: warning: ${warning}\n`);
-  }
-  process.stdout.write(`Validated ${results.length} post variant(s); ${failures.length} failed.\n`);
-  if (failures.length > 0) process.exitCode = 1;
-} else if (command === 'new') {
-  const valueFor = (name) => {
-    const index = args.indexOf(name);
-    return index === -1 ? undefined : args[index + 1];
-  };
-  const title = valueFor('--title');
-  const language = valueFor('--language');
-  const today = valueFor('--today');
-  const root = valueFor('--root') ?? process.cwd();
-  const result = await createPost({ root, title, language, today });
-  process.stdout.write(`Created ${result.postPath}\n`);
-} else if (command === 'doctor') {
-  const positional = args.filter((argument, index) =>
-    !argument.startsWith('--') && args[index - 1] !== '--source'
-  );
-  const root = positional[0] ?? process.cwd();
-  if (args.includes('--fix')) {
-    const sourceIndex = args.indexOf('--source');
-    const sourceRoot = sourceIndex === -1 ? undefined : args[sourceIndex + 1];
-    if (!sourceRoot) throw new Error('doctor --fix requires --source <trusted-template-root>');
-    const repaired = await repairFramework(root, sourceRoot);
-    process.stdout.write(`Repaired ${repaired.length} managed file(s).\n`);
-  }
-  const findings = await diagnoseFramework(root);
-  const drift = findings.filter(({ status }) => status !== 'intact');
-  findings.forEach(({ path: file, status }) => process.stdout.write(`${status}\t${file}\n`));
-  const publicationState = await diagnosePublicationState(root);
-  process.stdout.write(`${publicationState.status}\t${publicationState.path}\n`);
-  if (publicationState.status === 'invalid') process.exitCode = 1;
-  if (drift.length > 0) process.exitCode = 1;
-} else if (command === 'preview') {
-  const valueFor = (name) => {
-    const index = args.indexOf(name);
-    return index === -1 ? undefined : args[index + 1];
-  };
-  await previewSite({
-    root: valueFor('--root') ?? process.cwd(),
-    today: valueFor('--today')
-  });
-} else if (command === 'workflow') {
-  const valueFor = (name) => {
-    const index = args.indexOf(name);
-    return index === -1 ? undefined : args[index + 1];
-  };
-  const result = await writePublishWorkflow({
-    root: valueFor('--root') ?? process.cwd(),
-    siteId: valueFor('--site-id'),
-    timezone: valueFor('--timezone'),
-    actionRef: valueFor('--action-ref'),
-    defaultBranch: valueFor('--default-branch') ?? 'main',
-    buildMode: valueFor('--mode') ?? 'build-and-deploy'
-  });
-  process.stdout.write(`Wrote ${result.target} (${result.minute} ${result.hour} * * *)\n`);
-} else if (command === 'publish') {
-  const valueFor = (name) => {
-    const index = args.indexOf(name);
-    return index === -1 ? undefined : args[index + 1];
-  };
-  await publishSite({
-    root: valueFor('--root') ?? process.cwd(),
-    today: valueFor('--today'),
-    force: args.includes('--force')
-  });
-} else if (command === 'record-deployment') {
-  const valueFor = (name) => {
-    const index = args.indexOf(name);
-    return index === -1 ? undefined : args[index + 1];
-  };
-  const root = valueFor('--root') ?? process.cwd();
-  const result = await recordDeployment({
-    root,
-    deployedOn: valueFor('--today'),
-    deployedCommitSha: valueFor('--commit-sha')
-  });
-  process.stdout.write(
-    `${result.pushed ? 'Pushed' : 'No change for'} successful deployment `
-    + `of ${result.state.posts.length} article(s).\n`
-    + `Recorded state SHA: ${result.recordedStateSha}\n`
-  );
-} else if (command === 'refresh') {
-  const rootIndex = args.indexOf('--root');
-  const root = rootIndex === -1 ? process.cwd() : args[rootIndex + 1];
-  const result = await refreshEngagementSnapshot({ root });
-  process.stdout.write(result.changed
-    ? 'Refreshed, committed, and pushed the engagement snapshot.\n'
-    : 'Engagement snapshot is already current.\n');
-} else if (command === 'upgrade') {
-  const valueFor = (name) => {
-    const index = args.indexOf(name);
-    return index === -1 ? undefined : args[index + 1];
-  };
-  const terminalConfirm = async ({ installed, version, channel }) => {
-    if (args.includes('--yes')) return true;
-    const terminal = createInterface({ input: process.stdin, output: process.stdout });
-    try {
-      const answer = await terminal.question(`Upgrade theme ${installed} -> ${version} (${channel})? [y/N] `);
-      return /^(?:y|yes)$/i.test(answer.trim());
-    } finally { terminal.close(); }
-  };
-  const result = await upgradeTheme({
-    root: valueFor('--root') ?? process.cwd(),
-    channel: valueFor('--channel'),
-    confirm: terminalConfirm
-  });
-  process.stdout.write(result.cancelled ? 'Theme upgrade cancelled.\n'
-    : result.changed ? `Upgraded theme to ${result.version}.\n`
-      : `Theme ${result.version} is already installed.\n`);
-  process.stdout.write(
-    `Action major v${result.action.currentMajor}; `
-    + (result.action.newerAvailable
-      ? `v${result.action.latestMajor} is available.\n`
-      : 'no newer major is available.\n')
-  );
-} else if (command === 'hook' && args[0] === 'install') {
-  const rootIndex = args.indexOf('--root');
-  const root = rootIndex === -1 ? process.cwd() : args[rootIndex + 1];
-  const result = await installPrePushHook(root);
-  process.stdout.write(`${result.installed ? 'Installed' : 'Already installed'} ${result.target}\n`);
-} else {
-  process.stderr.write(`${usage}\n`);
-  process.exitCode = 1;
+function usage() {
+  const lines = Object.entries(COMMANDS)
+    .map(([key, { summary }]) => `    ${key.padEnd(9)} ${summary}`)
+    .join('\n');
+  process.stdout.write(`\n  gala <command>\n\n${lines}\n\n    Run any command with --help.\n\n`);
 }

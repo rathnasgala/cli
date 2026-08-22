@@ -1,6 +1,6 @@
 {
   "name": "@rathnasgala/cli",
-  "version": "0.0.22",
+  "version": "1.0.0",
   "type": "module",
   "files": [
     "src"
@@ -13,13 +13,13 @@
     "gala": "src/index.js"
   },
   "scripts": {
-    "test": "node --test",
+    "test": "node --test test/*.test.js",
     "lint": "node scripts/lint.js",
     "preversion": "npm test && npm run lint",
     "push": "node scripts/push.js"
   },
   "engines": {
-    "node": ">=18"
+    "node": ">=20"
   },
   "repository": {
     "type": "git",

@@ -1,0 +1,143 @@
+import { spawn } from 'node:child_process';
+import path from 'node:path';
+
+/**
+ * Git, authenticated as the writer's Gala credential rather than as the machine.
+ *
+ * v0 let every git call fall through to whatever credential helper the machine had configured,
+ * which is a different identity from the one the CLI just authenticated with. On the machine where
+ * this surfaced the token belonged to one account and git's stored credential to another, so a
+ * scaffold created the repository through the API and was then refused when it tried to write to
+ * it. Anyone with no credential configured at all — a fresh machine, or SSH-only — had no chance.
+ *
+ * The token travels in the environment, never in the argument list, because arguments are readable
+ * machine-wide through `ps`. Nothing is written to `.git/config`.
+ */
+const TOKEN_VARIABLE = 'GALA_GIT_TOKEN';
+
+function credentialArguments(token) {
+  if (typeof token !== 'string' || token === '') return [];
+  return [
+    // The empty helper first, or the machine's keychain answers before ours does.
+    '-c', 'credential.helper=',
+    '-c', `credential.helper=!f() { test "$1" = get && echo username=x-access-token && echo "password=$${TOKEN_VARIABLE}"; }; f`
+  ];
+}
+
+function environmentFor(token) {
+  if (typeof token !== 'string' || token === '') return process.env;
+  // Nothing on this path may block waiting for a username at a terminal.
+  return { ...process.env, [TOKEN_VARIABLE]: token, GIT_TERMINAL_PROMPT: '0' };
+}
+
+export function createGit({ root, token, spawnProcess = spawn } = {}) {
+  const cwd = root == null ? process.cwd() : path.resolve(root);
+
+  /*
+   * Git's own output is captured, not inherited.
+   *
+   * v0 let it through, so a writer's terminal filled with `Cloning into '/long/path'`, rebase
+   * plumbing and push refspecs interleaved with the CLI's own lines. None of it is addressed to
+   * them. On failure every captured line is emitted, because that is exactly when git's text is
+   * the most useful thing on screen.
+   */
+  const run = (args, { allow = [0], capture = false } = {}) => new Promise((resolve, reject) => {
+    const child = spawnProcess('git', ['-C', cwd, ...credentialArguments(token), ...args], {
+      cwd,
+      shell: false,
+      stdio: ['ignore', 'pipe', 'pipe'],
+      env: environmentFor(token)
+    });
+    let stdout = '';
+    let stderr = '';
+    child.stdout?.on('data', (chunk) => { stdout += chunk; });
+    child.stderr?.on('data', (chunk) => { stderr += chunk; });
+    child.once('error', reject);
+    child.once('exit', (code, signal) => {
+      if (signal || !allow.includes(code)) {
+        const said = `${stdout}${stderr}`.trim();
+        const failure = new Error(signal
+          ? `git ${args[0]} stopped by ${signal}`
+          : `git ${args[0]} exited with ${code}`);
+        failure.detail = said;
+        reject(failure);
+        return;
+      }
+      resolve(capture ? stdout.trim() : code);
+    });
+  });
+
+  const git = {
+    root: cwd,
+    run,
+
+    async branch() {
+      const name = await run(['rev-parse', '--abbrev-ref', 'HEAD'], { capture: true });
+      if (name === 'HEAD' || !/^[A-Za-z0-9._/-]+$/.test(name)) {
+        throw new Error('This checkout is not on a named branch');
+      }
+      return name;
+    },
+
+    async head() {
+      const sha = await run(['rev-parse', 'HEAD'], { capture: true });
+      if (!/^[0-9a-f]{40}$/.test(sha)) throw new Error('git returned an unusable commit id');
+      return sha;
+    },
+
+    /** True when something was recorded; false when the tree already matched. */
+    async record(message, paths) {
+      await run(['add', '--', ...paths]);
+      const unchanged = await run(['diff', '--cached', '--quiet', '--exit-code'], { allow: [0, 1] });
+      if (unchanged === 0) return false;
+      await run(['commit', '-m', message]);
+      return true;
+    },
+
+    send: () => run(['push', 'origin', 'HEAD']),
+
+    /**
+     * Brings the remote's commits in, over the top of anything uncommitted.
+     *
+     * `--autostash` matters: this runs before the writer's work is recorded, and a rebase refuses a
+     * dirty tree. Doing it the other way round — record first, then rebase — is what produced
+     * conflicts in `content/posts/*`: validation assigns a content id to any post missing one, and
+     * the publish workflow assigns one remotely too. Both sides edit the same file, pick different
+     * ids, and git can only call that a conflict. Taking the remote first means the local pass sees
+     * ids that already exist and changes nothing.
+     */
+    async takeRemote() {
+      const branch = await git.branch();
+      await run(['fetch', 'origin', branch]);
+      await run(['rebase', '--autostash', `origin/${branch}`]);
+      return git.head();
+    }
+  };
+
+  return git;
+}
+
+export function cloneRepository({ url, target, token, spawnProcess = spawn }) {
+  const resolved = path.resolve(target);
+  return new Promise((resolve, reject) => {
+    const child = spawnProcess('git', [...credentialArguments(token), 'clone', url, resolved], {
+      cwd: path.dirname(resolved),
+      shell: false,
+      stdio: ['ignore', 'pipe', 'pipe'],
+      env: environmentFor(token)
+    });
+    let said = '';
+    child.stdout?.on('data', (chunk) => { said += chunk; });
+    child.stderr?.on('data', (chunk) => { said += chunk; });
+    child.once('error', reject);
+    child.once('exit', (code, signal) => {
+      if (signal || code !== 0) {
+        const failure = new Error(signal ? `clone stopped by ${signal}` : `clone exited with ${code}`);
+        failure.detail = said.trim();
+        reject(failure);
+        return;
+      }
+      resolve(resolved);
+    });
+  });
+}
