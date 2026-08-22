@@ -52,9 +52,23 @@ export async function exchangeGithubAuthorization({
   return payload.authorization;
 }
 
-export async function listAuthorizedRepositories({ apiBaseUrl, authorization, fetchImpl = fetch }) {
+/**
+ * Both credentials are required, and they are not interchangeable.
+ *
+ * The endpoint is `.authenticated()` and its handler takes the Gala principal, so the bearer says
+ * who is asking; `GitHub-Authorization` is the short-lived capability that says what they may see.
+ * Sending only the capability gets a bare 401 from the security filter, before any handler runs —
+ * which reads as "your GitHub authorization was refused" and is nothing of the kind.
+ */
+export async function listAuthorizedRepositories({
+  apiBaseUrl, authorization, galaAccessToken, fetchImpl = fetch
+}) {
   const response = await fetchImpl(endpoint(apiBaseUrl, '/v1/auth/github/repositories'), {
-    headers: { accept: 'application/json', 'GitHub-Authorization': authorization }
+    headers: {
+      accept: 'application/json',
+      authorization: `Bearer ${galaAccessToken}`,
+      'GitHub-Authorization': authorization
+    }
   });
   if (!response.ok) {
     throw new Error(`Authorized repository lookup failed with HTTP ${response.status}`);
@@ -80,7 +94,7 @@ export async function resolveInstallationId({
   });
   // null means the App is not installed yet, which the caller turns into an instruction.
   if (authorization == null) return null;
-  const repositories = await list({ apiBaseUrl, authorization, fetchImpl });
+  const repositories = await list({ apiBaseUrl, authorization, galaAccessToken, fetchImpl });
   const wanted = String(owner).toLowerCase();
   for (const repository of repositories) {
     if (String(repository?.owner).toLowerCase() !== wanted) continue;

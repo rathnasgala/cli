@@ -27,11 +27,18 @@ test('exchanges the GitHub token for the bounded capability the repository list 
   assert.deepEqual(JSON.parse(seen[0][1].body), { accessToken: 'github-token' });
 });
 
-test('sends the capability as the GitHub-Authorization header, not as a bearer token', async () => {
+test('sends the Gala bearer and the capability, because the endpoint requires both', async () => {
+  /*
+   * This assertion previously required the bearer to be ABSENT, which is how a request that the
+   * security filter rejects before any handler runs shipped with a green suite. The endpoint is
+   * `.authenticated()` and its handler takes the Gala principal: the bearer says who is asking,
+   * the capability says what they may see, and neither substitutes for the other.
+   */
   const seen = [];
   await listAuthorizedRepositories({
     apiBaseUrl: 'https://api.gala67.com',
     authorization: 'b'.repeat(43),
+    galaAccessToken: 'gala-token',
     fetchImpl: async (url, init) => {
       seen.push([url, init]);
       return { ok: true, status: 200, json: async () => [] };
@@ -40,7 +47,24 @@ test('sends the capability as the GitHub-Authorization header, not as a bearer t
 
   assert.equal(seen[0][0], 'https://api.gala67.com/v1/auth/github/repositories');
   assert.equal(seen[0][1].headers['GitHub-Authorization'], 'b'.repeat(43));
-  assert.equal(seen[0][1].headers.authorization, undefined);
+  assert.equal(seen[0][1].headers.authorization, 'Bearer gala-token');
+});
+
+test('carries the bearer through the installation lookup, not just the direct call', async () => {
+  const seen = [];
+  await resolveInstallationId({
+    apiBaseUrl: 'https://api.gala67.com',
+    galaAccessToken: 'gala-token',
+    githubAccessToken: 'github-token',
+    owner: 'saranfrog2',
+    exchange: async () => 'c'.repeat(43),
+    list: async (input) => {
+      seen.push(input);
+      return [{ installationId: 155579156, owner: 'saranfrog2', name: 'x', status: 'READY' }];
+    }
+  });
+  assert.equal(seen[0].galaAccessToken, 'gala-token');
+  assert.equal(seen[0].authorization, 'c'.repeat(43));
 });
 
 test('finds the installation covering the owner regardless of which repository carries it', async () => {
