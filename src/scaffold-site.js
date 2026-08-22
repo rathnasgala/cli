@@ -112,7 +112,7 @@ export async function scaffoldSite({
     const created = await createRepository({
       apiBaseUrl: gala.apiBaseUrl, galaAccessToken: gala.accessToken,
       githubAccessToken: github.accessToken, name: repositoryName,
-      notify, ask, openUrl
+      notify, ask, openUrl, selfLogin: requestedOwner
     });
     repositoryOwner = segment(created.owner, 'owner');
     repositoryName = segment(created.repository, 'repository');

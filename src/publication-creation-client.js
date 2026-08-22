@@ -27,9 +27,12 @@ export async function createPublication({
   ask,
   openUrl = () => false,
   shareAttempts = 3,
-  installationsUrl = 'https://github.com/settings/installations'
+  selfLogin
 }) {
   let created = false;
+  let shareUrl = 'https://github.com/settings/installations';
+  let repositoryOwner = selfLogin ?? '';
+  let repositoryName = name;
   for (let attempt = 0; attempt < Math.max(1, shareAttempts); attempt += 1) {
     const result = await requestPublication({
       apiBaseUrl, galaAccessToken, githubAccessToken, name, fetchImpl, authorize
@@ -47,18 +50,41 @@ export async function createPublication({
      * rather than NEEDS_SHARING — the same situation under a different name.
      */
     const shareable = result.status === 'NEEDS_SHARING' || created;
-    created = created || result.status === 'NEEDS_SHARING';
+    if (result.status === 'NEEDS_SHARING') {
+      created = true;
+      shareUrl = installationSettingsUrl(result.installationId, result.owner, selfLogin);
+      repositoryName = result.repository ?? repositoryName;
+      repositoryOwner = result.owner ?? repositoryOwner;
+    }
     if (!shareable || typeof ask !== 'function') throw result.failure;
 
-    notify(`${result.owner ?? ''}/${result.repository ?? name} exists, but the Gala GitHub App `
-      + 'cannot reach it yet — its installation covers only selected repositories.');
-    notify(`${openUrl(installationsUrl) ? 'Opened' : 'Open'} ${installationsUrl}`);
+    notify(`${repositoryOwner}/${repositoryName} was created, but the Gala GitHub App cannot reach `
+      + 'it yet — its installation covers only selected repositories, which is the right way to '
+      + 'have it. Add this one repository to the installation; nothing else needs granting.');
+    notify(`${openUrl(shareUrl) ? 'Opened' : 'Open'} ${shareUrl}`);
     await ask('Press enter once the App can access that repository. ');
   }
   throw new Error(
-    `The Gala GitHub App still cannot reach the repository for ${name}. Give it access at `
-    + `${installationsUrl}, then run scaffold again.`
+    `The Gala GitHub App still cannot reach ${repositoryOwner}/${repositoryName}. Add that `
+    + `repository to the installation at ${shareUrl}, then run scaffold again.`
   );
+}
+
+/**
+ * The page that grants one repository, rather than the list of every app ever installed.
+ *
+ * GitHub keeps user and organisation installation settings on different paths, and only the caller
+ * knows which this is: the created owner differing from the token's own account means the
+ * installation lives on an organisation.
+ */
+export function installationSettingsUrl(installationId, owner, selfLogin) {
+  const generic = 'https://github.com/settings/installations';
+  if (!Number.isSafeInteger(Number(installationId)) || Number(installationId) <= 0) return generic;
+  const isOrganization = typeof owner === 'string' && typeof selfLogin === 'string'
+    && owner.toLowerCase() !== selfLogin.toLowerCase();
+  return isOrganization
+    ? `https://github.com/organizations/${encodeURIComponent(owner)}/settings/installations/${installationId}`
+    : `https://github.com/settings/installations/${installationId}`;
 }
 
 async function requestPublication({
@@ -87,6 +113,9 @@ async function requestPublication({
   if (status !== 'READY') {
     return {
       ready: false, status, owner, repository,
+      // Carried even though the repository is not in the installation yet: it is what makes the
+      // grant a deep link rather than a hunt.
+      installationId: payload?.installationId,
       failure: new Error(
         `Gala could not create the publication repository (${payload?.outcome ?? status}). `
         + 'Give the Gala GitHub App access to it at https://github.com/settings/installations, or '

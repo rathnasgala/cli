@@ -1,9 +1,10 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { createPublication } from '../src/publication-creation-client.js';
+import { createPublication, installationSettingsUrl } from '../src/publication-creation-client.js';
 
 const base = {
+  selfLogin: 'ada',
   apiBaseUrl: 'https://api.gala67.com',
   galaAccessToken: 'gala-token',
   githubAccessToken: 'gho_token',
@@ -68,7 +69,10 @@ test('NEEDS_SHARING is recoverable: share the repository, ask again, continue', 
         });
       }
       return reply(calls === 1
-        ? { status: 'NEEDS_SHARING', owner: 'rathnasgala', name: 'cli67test', outcome: 'CREATED_NEEDS_SHARING' }
+        ? {
+          status: 'NEEDS_SHARING', installationId: 4568309, owner: 'rathnasgala',
+          name: 'cli67test', outcome: 'CREATED_NEEDS_SHARING'
+        }
         : { status: 'MANUAL', outcome: 'UNSUPPORTED' });
     }
   });
@@ -76,7 +80,10 @@ test('NEEDS_SHARING is recoverable: share the repository, ask again, continue', 
   assert.equal(created.fullName, 'rathnasgala/cli67test');
   assert.equal(created.installationId, 4568309);
   assert.ok(messages.some((m) => m.includes('cannot reach it yet')));
-  assert.deepEqual(opened, ['https://github.com/settings/installations']);
+  // A deep link to the one installation, not the list of every app the writer has ever installed.
+  assert.deepEqual(opened,
+    ['https://github.com/organizations/rathnasgala/settings/installations/4568309']);
+  assert.ok(messages.some((m) => m.includes('nothing else needs granting')));
 });
 
 test('a repository that is never shared fails with what to do, not with --resume', async () => {
@@ -129,4 +136,22 @@ test('carries the API failure text rather than a bare status', async () => {
     }),
     /HTTP 409.*not installed/s
   );
+});
+
+test('links to the installation that needs the grant, on the right settings path', () => {
+  /*
+   * GitHub keeps user and organisation installation settings on different paths, and offers no API
+   * to add a repository to an installation on the writer's behalf — it is documented as
+   * classic-PAT-only. So this always ends in a click, and the only thing worth optimising is
+   * whether that click is one link away or a hunt.
+   */
+  assert.equal(installationSettingsUrl(155579156, 'ada', 'ada'),
+    'https://github.com/settings/installations/155579156');
+  assert.equal(installationSettingsUrl(4568309, 'rathnasgala', 'ada'),
+    'https://github.com/organizations/rathnasgala/settings/installations/4568309');
+  // Without an id there is nothing to deep-link to, so the generic page beats a broken URL.
+  for (const id of [null, undefined, 0, -1, 'nope']) {
+    assert.equal(installationSettingsUrl(id, 'rathnasgala', 'ada'),
+      'https://github.com/settings/installations');
+  }
 });
