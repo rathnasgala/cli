@@ -57,6 +57,12 @@ site updates a minute or two later.
 npx --yes @rathnasgala/cli@latest doctor
 ```
 
+Inspect a verified managed-theme release without changing anything unless you confirm it:
+
+```console
+npx --yes @rathnasgala/cli@latest upgrade
+```
+
 Reports on your sign-ins, the publication folder, the publishing workflow, and anything you have
 written but not sent. Each check either passes, names what is wrong and how to fix it, or says it
 could not be determined — never one of those disguised as another.
@@ -71,6 +77,7 @@ Run any command with `--help`.
 | `new` | Start a post | `--language`, `--root`, `--today` |
 | `preview` | Build and serve the publication locally | `--root`, `--today` |
 | `publish` | Check, record and send your work to GitHub | `--root`, `--today`, `--skip-checks` |
+| `upgrade` | Inspect and apply a verified managed-theme update | `--root`, `--channel`, `--yes` |
 | `doctor` | Check a publication and say what is wrong | `--root` |
 | `auth` | Sign in to Gala and GitHub | — |
 

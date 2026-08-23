@@ -4,6 +4,7 @@ import { init } from './commands/init.js';
 import { createPost } from './commands/new.js';
 import { preview } from './commands/preview.js';
 import { publish } from './commands/publish.js';
+import { upgrade } from './commands/upgrade.js';
 
 /**
  * Six commands, in the order a writer meets them.
@@ -49,6 +50,13 @@ export const COMMANDS = {
     flags: ['root', 'today'],
     switches: ['skip-checks'],
     run: publish
+  },
+  upgrade: {
+    summary: 'Inspect and apply a verified managed-theme update',
+    usage: 'gala upgrade [--channel latest|next] [--yes]',
+    flags: ['root', 'channel'],
+    switches: ['yes'],
+    run: upgrade
   },
   doctor: {
     summary: 'Check a publication and say what is wrong',

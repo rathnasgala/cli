@@ -19,7 +19,7 @@ test('documents every command that exists, and nothing that does not', () => {
     assert.match(readme, invoked(command), `README omits ${command}`);
   }
   for (const gone of ['scaffold', 'validate', 'workflow', 'record-deployment', 'configure',
-    'topology', 'refresh', 'entitlement', 'upgrade', 'connect']) {
+    'topology', 'refresh', 'entitlement', 'connect']) {
     assert.doesNotMatch(readme, invoked(gone), `README still documents ${gone}`);
   }
 });

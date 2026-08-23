@@ -14,18 +14,18 @@ const invoke = (args, options = {}) => run(process.execPath, [entry, ...args], {
   env: { ...process.env, NO_COLOR: '1' }, ...options
 }).then((ok) => ({ code: 0, ...ok }), (failure) => failure);
 
-test('lists exactly the six commands, and nothing that no longer exists', async () => {
+test('lists the seven supported author commands and no removed internals', async () => {
   /*
    * v0 had fifteen. The extra nine were the ones nobody could keep working — a `validate` a hook
    * ran behind the writer's back, a `workflow` writer for a file the server owns, a
    * `record-deployment` nothing called. Each was a surface to keep correct and a way to be wrong.
    */
   const { stdout } = await invoke(['--help']);
-  for (const command of ['auth', 'init', 'new', 'preview', 'publish', 'doctor']) {
+  for (const command of ['auth', 'init', 'new', 'preview', 'publish', 'upgrade', 'doctor']) {
     assert.match(stdout, new RegExp(`\\b${command}\\b`), command);
   }
   for (const gone of ['scaffold', 'validate', 'workflow', 'record-deployment', 'configure',
-    'topology', 'refresh', 'entitlement', 'upgrade', 'hook']) {
+    'topology', 'refresh', 'entitlement', 'hook']) {
     assert.doesNotMatch(stdout, new RegExp(`\\b${gone}\\b`), gone);
   }
 });
@@ -51,7 +51,7 @@ test('a mistyped option fails before anything happens', async () => {
 });
 
 test('every command explains itself', async () => {
-  for (const command of ['auth', 'init', 'new', 'preview', 'publish', 'doctor']) {
+  for (const command of ['auth', 'init', 'new', 'preview', 'publish', 'upgrade', 'doctor']) {
     const { stdout, code } = await invoke([command, '--help']);
     assert.equal(code, 0, command);
     assert.match(stdout, /gala /, command);
