@@ -1,6 +1,10 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
+import { mkdtemp, mkdir, readFile, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
+import { c as createTar } from 'tar';
 
 import { upgrade } from '../src/commands/upgrade.js';
 
@@ -22,14 +26,16 @@ const terminal = () => {
 
 test('reports an exact current release without downloading or changing files', async () => {
   const output = terminal();
+  const installed = JSON.parse(await readFile(path.join(root, '.gala', 'managed-files.json'), 'utf8'));
+  const version = installed.themePackage.version;
   const fetchImpl = async () => new Response(JSON.stringify({
-    'dist-tags': { latest: '2.0.0' },
-    versions: { '2.0.0': { dist: { tarball: 'https://registry.example/theme.tgz', integrity: 'sha512-AA==' } } },
+    'dist-tags': { latest: version },
+    versions: { [version]: { dist: { tarball: 'https://registry.example/theme.tgz', integrity: 'sha512-AA==' } } },
   }));
 
   const result = await upgrade({ terminal: output, options: options({ root }), fetchImpl });
 
-  assert.deepEqual(result, { changed: false, version: '2.0.0' });
+  assert.deepEqual(result, { changed: false, version });
   assert.match(output.messages.join('\n'), /Already current/);
 });
 
@@ -38,4 +44,50 @@ test('refuses a channel outside the two documented release tracks', async () => 
     () => upgrade({ terminal: terminal(), options: options({ root, channel: 'beta' }) }),
     /channel must be latest or next/,
   );
+});
+
+test('commits the new managed manifest so the installed release is coherent', async () => {
+  const temporary = await mkdtemp(path.join(tmpdir(), 'gala-upgrade-test-'));
+  const site = path.join(temporary, 'site');
+  const packageRoot = path.join(temporary, 'package');
+  const payload = path.join(packageRoot, 'payload');
+  await mkdir(path.join(site, '.gala'), { recursive: true });
+  await mkdir(path.join(payload, '.gala'), { recursive: true });
+  const oldBytes = Buffer.from('old runtime\n');
+  const newBytes = Buffer.from('new runtime\n');
+  await writeFile(path.join(site, 'runtime.js'), oldBytes);
+  await writeFile(path.join(site, 'site.config.yml'), 'framework:\n  themePackage:\n    version: 1.0.0\n');
+  const installed = {
+    schemaVersion: 1,
+    themePackage: { name: '@rathnasgala/theme', version: '1.0.0' },
+    files: { 'runtime.js': createHash('sha256').update(oldBytes).digest('hex') },
+  };
+  await writeFile(path.join(site, '.gala', 'managed-files.json'), JSON.stringify(installed));
+  await writeFile(path.join(payload, 'runtime.js'), newBytes);
+  const available = {
+    schemaVersion: 1,
+    themePackage: { name: '@rathnasgala/theme', version: '2.0.0' },
+    files: { 'runtime.js': createHash('sha256').update(newBytes).digest('hex') },
+  };
+  await writeFile(path.join(payload, '.gala', 'managed-files.json'), JSON.stringify(available));
+  const archive = path.join(temporary, 'theme.tgz');
+  await createTar({ gzip: true, cwd: temporary, file: archive }, ['package']);
+  const archiveBytes = await readFile(archive);
+  const integrity = `sha512-${createHash('sha512').update(archiveBytes).digest('base64')}`;
+  const fetchImpl = async (url) => url.includes('registry.npmjs.org')
+    ? new Response(JSON.stringify({
+      'dist-tags': { latest: '2.0.0' },
+      versions: { '2.0.0': { dist: { tarball: 'https://registry.example/theme.tgz', integrity } } },
+    }))
+    : new Response(archiveBytes);
+
+  await upgrade({ terminal: terminal(), options: options({ root: site }, { yes: true }), fetchImpl });
+
+  assert.equal(await readFile(path.join(site, 'runtime.js'), 'utf8'), 'new runtime\n');
+  assert.deepEqual(
+    JSON.parse(await readFile(path.join(site, '.gala', 'managed-files.json'), 'utf8')),
+    available,
+  );
+  const second = await upgrade({ terminal: terminal(), options: options({ root: site }), fetchImpl });
+  assert.deepEqual(second, { changed: false, version: '2.0.0' });
 });

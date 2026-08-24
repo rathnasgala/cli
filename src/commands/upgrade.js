@@ -95,6 +95,7 @@ async function replaceFile(target, bytes) {
 
 async function applyRelease(root, payload, installed, available) {
   const configFile = path.join(root, 'site.config.yml');
+  const manifestFile = path.join(root, '.gala', 'managed-files.json');
   const config = await readFile(configFile, 'utf8');
   const updated = config.replace(
     /(themePackage:\s*\n(?:\s+.*\n)*?\s+version:\s*)[^\s#]+/,
@@ -111,6 +112,7 @@ async function applyRelease(root, payload, installed, available) {
       await copyFile(target, saved);
     }
     await copyFile(configFile, path.join(backup, 'site.config.yml'));
+    await copyFile(manifestFile, path.join(backup, 'managed-files.json'));
     for (const managed of previousFiles) {
       if (available.files[managed] == null) await rm(path.join(root, managed));
     }
@@ -119,6 +121,7 @@ async function applyRelease(root, payload, installed, available) {
       await replaceFile(path.join(root, managed), await readFile(path.join(payload, artifact)));
     }
     await replaceFile(configFile, updated);
+    await replaceFile(manifestFile, `${JSON.stringify(available, null, 2)}\n`);
   } catch (error) {
     for (const managed of Object.keys(available.files)) {
       if (installed.files[managed] == null) await rm(path.join(root, managed), { force: true });
@@ -127,6 +130,7 @@ async function applyRelease(root, payload, installed, available) {
       await replaceFile(path.join(root, managed), await readFile(path.join(backup, managed)));
     }
     await replaceFile(configFile, await readFile(path.join(backup, 'site.config.yml')));
+    await replaceFile(manifestFile, await readFile(path.join(backup, 'managed-files.json')));
     throw error;
   } finally {
     await rm(backup, { recursive: true, force: true });
