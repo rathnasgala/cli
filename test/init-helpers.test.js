@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { installationUrl, slugify } from '../src/commands/init.js';
+import { installationUrl, publicationAccount, slugify } from '../src/commands/init.js';
 
 test('turns what a writer types into something GitHub accepts as a repository name', () => {
   assert.equal(slugify('Field Notes'), 'field-notes');
@@ -27,4 +27,48 @@ test('links to the one installation that needs the grant, on the right settings 
   for (const id of [null, undefined, 0, -1, 'nope']) {
     assert.equal(installationUrl(id, 'acme', 'ada'), 'https://github.com/settings/installations');
   }
+});
+
+test('selects the personal installation without depending on GitHub list order', async () => {
+  const api = {
+    githubInstallationAccounts: async () => ({
+      installationUrl: 'https://github.com/apps/gala67-app/installations/new',
+      accounts: [
+        { installationId: 84, login: 'writers-room', organization: true },
+        { installationId: 42, login: 'ada', organization: false },
+      ],
+    }),
+  };
+
+  assert.deepEqual(await publicationAccount({ terminal: {}, api, capability: 'proof' }),
+    { installationId: 42, login: 'ada', organization: false });
+});
+
+test('asks instead of guessing between multiple organization installations', async () => {
+  const api = {
+    githubInstallationAccounts: async () => ({
+      installationUrl: 'https://github.com/apps/gala67-app/installations/new',
+      accounts: [
+        { installationId: 84, login: 'writers-room', organization: true },
+        { installationId: 85, login: 'editors-room', organization: true },
+      ],
+    }),
+  };
+  const terminal = { ask: async () => 'editors-room' };
+
+  assert.equal((await publicationAccount({ terminal, api, capability: 'proof' })).installationId, 85);
+});
+
+test('reports the exact installation route when authorization has no installation', async () => {
+  const api = {
+    githubInstallationAccounts: async () => ({
+      installationUrl: 'https://github.com/apps/gala67-app/installations/new',
+      accounts: [],
+    }),
+  };
+
+  await assert.rejects(
+    publicationAccount({ terminal: {}, api, capability: 'proof' }),
+    /https:\/\/github\.com\/apps\/gala67-app\/installations\/new/,
+  );
 });

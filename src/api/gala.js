@@ -59,12 +59,19 @@ export function galaApi({ baseUrl = DEFAULT_API_BASE_URL, token } = {}) {
      * wait for the App installation to reach the result, which is why repositories the CLI created
      * never appeared in the web UI.
      */
-    createPublication({ capability, name }) {
+    createPublication({ capability, name, installationId }) {
       return requestJson(`${root}/v1/auth/github/publications`,
         authorized('Publication creation', {
           method: 'POST',
           headers: { 'content-type': 'application/json', 'GitHub-Authorization': capability },
-          body: JSON.stringify({ name })
+          body: JSON.stringify({ name, installationId })
+        }));
+    },
+
+    githubInstallationAccounts({ capability }) {
+      return requestJson(`${root}/v1/auth/github/accounts`,
+        authorized('GitHub installation accounts', {
+          headers: { 'GitHub-Authorization': capability }
         }));
     },
 

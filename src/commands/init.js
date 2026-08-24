@@ -28,6 +28,7 @@ import { UsageError } from '../cli/args.js';
  * What is left is genuinely the CLI's: asking what to call it, cloning, and reporting the address.
  */
 const NAME = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+const GITHUB_APP_INSTALLATION_URL = 'https://github.com/apps/gala67-app/installations/new';
 
 export async function init({ terminal, options, cwd = process.cwd() }) {
   const explicitName = options.value('name');
@@ -43,9 +44,12 @@ export async function init({ terminal, options, cwd = process.cwd() }) {
 
   const api = galaApi({ baseUrl: gala.apiBaseUrl, token: gala.accessToken });
   const capability = await api.githubCapability(github.accessToken);
+  const installation = await publicationAccount({ terminal, api, capability });
 
   terminal.step(`Creating ${name}`);
-  const created = await createPublication({ terminal, api, capability, name, github });
+  const created = await createPublication({
+    terminal, api, capability, name, github, installationId: installation.installationId
+  });
 
   terminal.step('Waiting for GitHub to copy the template');
   await waitForContent(githubApi(github.accessToken), created.owner, created.name);
@@ -93,10 +97,9 @@ export async function init({ terminal, options, cwd = process.cwd() }) {
  * behalf: adding a repository to an installation is documented as classic-PAT-only. So it is asked
  * for, with a link to the one page that grants it.
  */
-async function createPublication({ terminal, api, capability, name, github }) {
-  let created = false;
-  for (let attempt = 0; attempt < 3; attempt += 1) {
-    const result = await api.createPublication({ capability, name });
+async function createPublication({ terminal, api, capability, name, github, installationId }) {
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    const result = await api.createPublication({ capability, name, installationId });
     if (result?.status === 'READY') {
       if (typeof result.owner !== 'string' || typeof result.name !== 'string') {
         throw new Error('Gala created the publication but did not say where');
@@ -104,27 +107,52 @@ async function createPublication({ terminal, api, capability, name, github }) {
       return result;
     }
 
-    // Once the repository exists a further refusal reports UNSUPPORTED rather than NEEDS_SHARING:
-    // the same situation under a different name.
-    const shareable = result?.status === 'NEEDS_SHARING' || created;
-    if (!shareable) {
+    if (result?.status === 'SETUP_PENDING') {
+      terminal.note(`${result.owner ?? ''}/${result.name ?? name} exists; GitHub is still copying it`);
+      await new Promise((resolve) => { setTimeout(resolve, 1000); });
+      continue;
+    }
+
+    if (result?.status !== 'NEEDS_SHARING') {
       throw new Error(
         `Gala could not create the publication (${result?.outcome ?? result?.status}). `
-        + 'Install the Gala GitHub App at https://github.com/apps/gala67-app and try again.'
+        + `Continue at ${result?.recoveryUrl ?? GITHUB_APP_INSTALLATION_URL} `
+        + 'and try again.'
       );
     }
-    created = true;
 
     const owner = result?.owner ?? '';
     terminal.blank();
     terminal.step(`${owner}/${result?.name ?? name} exists, but Gala cannot reach it yet`);
     terminal.note('its installation covers only selected repositories — add this one');
-    terminal.openUrl(installationUrl(result?.installationId, owner, await viewerOf(github)));
+    terminal.openUrl(result?.recoveryUrl
+      ?? installationUrl(result?.installationId, owner, await viewerOf(github)));
     if (!await terminal.waitForEnter('Once Gala can access it')) {
       throw new Error(`Add ${owner}/${result?.name ?? name} to the Gala GitHub App, then run this again.`);
     }
   }
   throw new Error(`Gala still cannot reach the repository for ${name}.`);
+}
+
+export async function publicationAccount({ terminal, api, capability }) {
+  const state = await api.githubInstallationAccounts({ capability });
+  const accounts = Array.isArray(state?.accounts) ? state.accounts : [];
+  if (accounts.length === 0) {
+    throw new Error(
+      `Install or request the Gala GitHub App at ${state?.installationUrl
+        ?? GITHUB_APP_INSTALLATION_URL} and try again.`
+    );
+  }
+  const personal = accounts.find((account) => account?.organization === false);
+  if (personal) return personal;
+  if (accounts.length === 1) return accounts[0];
+
+  const choices = accounts.map((account) => account.login).join(', ');
+  const selected = (await terminal.ask(`Which GitHub account should own it? (${choices})`)).trim();
+  const account = accounts.find((candidate) =>
+    candidate.login.toLowerCase() === selected.toLowerCase());
+  if (!account) throw new UsageError(`Choose one of these GitHub accounts: ${choices}`);
+  return account;
 }
 
 let viewerCache;
