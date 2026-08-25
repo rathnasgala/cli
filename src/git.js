@@ -141,3 +141,20 @@ export function cloneRepository({ url, target, token, spawnProcess = spawn }) {
     });
   });
 }
+
+/** Populate a deliberately empty git repository without replacing its .git directory. */
+export async function populateEmptyRepository({ url, target, token, spawnProcess = spawn }) {
+  const git = createGit({ root: target, token, spawnProcess });
+  const hasOrigin = await git.run(['remote', 'get-url', 'origin'], { allow: [0, 2] });
+  await git.run(hasOrigin === 0
+    ? ['remote', 'set-url', 'origin', url]
+    : ['remote', 'add', 'origin', url]);
+  await git.run(['fetch', 'origin']);
+  const remoteHead = await git.run(['ls-remote', '--symref', 'origin', 'HEAD'], { capture: true });
+  const branch = /^ref: refs\/heads\/([^\s]+)\s+HEAD$/m.exec(remoteHead)?.[1];
+  if (!branch || !/^[A-Za-z0-9._/-]+$/.test(branch)) {
+    throw new Error('GitHub did not report a usable default branch');
+  }
+  await git.run(['checkout', '-B', branch, '--track', `origin/${branch}`]);
+  return path.resolve(target);
+}

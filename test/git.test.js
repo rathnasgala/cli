@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
 import test from 'node:test';
 
-import { cloneRepository, createGit } from '../src/git.js';
+import { cloneRepository, createGit, populateEmptyRepository } from '../src/git.js';
 
 function recorder({ exit = 0, stdout = '' } = {}) {
   const calls = [];
@@ -75,4 +75,65 @@ test('refuses a detached checkout instead of guessing a branch', async () => {
 test('refuses an unusable commit id rather than reporting it', async () => {
   const { spawnProcess } = recorder({ stdout: 'not-a-sha\n' });
   await assert.rejects(createGit({ root: '/site', spawnProcess }).head(), /unusable commit id/);
+});
+
+test('populates an empty git repository without replacing its metadata directory', async () => {
+  const responses = [
+    { exit: 2 },
+    { exit: 0 },
+    { exit: 0 },
+    { exit: 0, stdout: 'ref: refs/heads/main\tHEAD\naaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\tHEAD\n' },
+    { exit: 0 },
+  ];
+  const calls = [];
+  const spawnProcess = (command, args, options) => {
+    calls.push({ command, args, options });
+    const child = new EventEmitter();
+    child.stdout = new EventEmitter();
+    queueMicrotask(() => {
+      const response = responses.shift();
+      if (response.stdout) child.stdout.emit('data', response.stdout);
+      child.emit('exit', response.exit, null);
+    });
+    return child;
+  };
+
+  await populateEmptyRepository({
+    url: 'https://github.com/ada/notes.git', target: '/tmp/notes', spawnProcess,
+  });
+
+  assert.deepEqual(calls.map(({ args }) => args.at(-1)), [
+    'origin', 'https://github.com/ada/notes.git', 'origin', 'HEAD', 'origin/main',
+  ]);
+  assert.ok(calls.some(({ args }) => args.includes('add')));
+  assert.ok(calls.every(({ args }) => !args.includes('clone')));
+});
+
+test('repoints an existing origin when populating an empty git repository', async () => {
+  const calls = [];
+  const responses = [
+    { exit: 0, stdout: 'https://example.com/old.git\n' },
+    { exit: 0 },
+    { exit: 0 },
+    { exit: 0, stdout: 'ref: refs/heads/main\tHEAD\n' },
+    { exit: 0 },
+  ];
+  const spawnProcess = (command, args, options) => {
+    calls.push({ command, args, options });
+    const child = new EventEmitter();
+    child.stdout = new EventEmitter();
+    queueMicrotask(() => {
+      const response = responses.shift();
+      if (response.stdout) child.stdout.emit('data', response.stdout);
+      child.emit('exit', response.exit, null);
+    });
+    return child;
+  };
+
+  await populateEmptyRepository({
+    url: 'https://github.com/ada/notes.git', target: '/tmp/notes', spawnProcess,
+  });
+
+  assert.ok(calls.some(({ args }) => args.includes('set-url')));
+  assert.ok(!calls.some(({ args }) => args.includes('add')));
 });

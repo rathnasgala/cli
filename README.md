@@ -12,12 +12,23 @@ Nothing to install. Every command runs through `npx`.
 
 ## Start a publication
 
-Make a folder named after the publication you want, and run one command inside it:
+Create it in the current empty folder:
 
 ```console
 mkdir field-notes && cd field-notes
-npx --yes @rathnasgala/cli@latest init --here
+npx --yes @rathnasgala/cli@latest init
 ```
+
+Or name a new destination directly:
+
+```console
+npx --yes @rathnasgala/cli@latest init field-notes
+```
+
+The destination must be empty. An initialized Git repository with no commits and no files is also
+accepted and its `.git` directory is preserved. To reserve a custom domain during setup, add
+`--domain blog.example.com`; Gala still requires GitHub ownership verification and healthy DNS
+before activating it.
 
 It signs you in to Gala and to GitHub if you are not already, creates the repository, registers the
 publication, and leaves a working checkout in the folder. When it finishes it prints the address
@@ -51,6 +62,18 @@ npx --yes @rathnasgala/cli@latest publish
 Checks your content, records it, and sends it to GitHub. GitHub builds and deploys from there; the
 site updates a minute or two later.
 
+## Custom domain
+
+Reserve a domain after setup, then advance the verified GitHub Pages flow as DNS propagates:
+
+```console
+npx --yes @rathnasgala/cli@latest domain set blog.example.com
+npx --yes @rathnasgala/cli@latest domain check
+```
+
+`domain status` resumes an interrupted change, `domain cancel` abandons it, and `domain remove`
+returns the publication to its GitHub Pages address. After removal, delete the old DNS records.
+
 ## When something is wrong
 
 ```console
@@ -73,7 +96,8 @@ Run any command with `--help`.
 
 | Command | What it does | Options |
 | --- | --- | --- |
-| `init` | Create a publication and clone it here | `--name`, `--here` |
+| `init` | Create a publication in the current or named empty directory | `--name`, `--domain` |
+| `domain` | Inspect or change the custom domain | `--root` |
 | `new` | Start a post | `--language`, `--root`, `--today` |
 | `preview` | Build and serve the publication locally | `--root`, `--today` |
 | `publish` | Check, record and send your work to GitHub | `--root`, `--today`, `--skip-checks` |

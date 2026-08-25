@@ -1,7 +1,11 @@
 import assert from 'node:assert/strict';
+import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 import test from 'node:test';
 
-import { installationUrl, publicationAccount, slugify } from '../src/commands/init.js';
+import { inspectDestination, installationUrl, publicationAccount, slugify } from '../src/commands/init.js';
+import { customDomain } from '../src/domain.js';
 
 test('turns what a writer types into something GitHub accepts as a repository name', () => {
   assert.equal(slugify('Field Notes'), 'field-notes');
@@ -71,4 +75,39 @@ test('reports the exact installation route when authorization has no installatio
     publicationAccount({ terminal: {}, api, capability: 'proof' }),
     /https:\/\/github\.com\/apps\/gala67-app\/installations\/new/,
   );
+});
+
+test('uses only an empty destination or an empty zero-history git repository', async () => {
+  const root = await mkdtemp(path.join(tmpdir(), 'gala-init-'));
+  assert.equal(await inspectDestination(path.join(root, 'missing')), 'missing');
+
+  const empty = path.join(root, 'empty');
+  await mkdir(empty);
+  assert.equal(await inspectDestination(empty), 'empty');
+
+  const unborn = path.join(root, 'unborn');
+  await mkdir(path.join(unborn, '.git', 'refs', 'heads'), { recursive: true });
+  await writeFile(path.join(unborn, '.git', 'HEAD'), 'ref: refs/heads/main\n');
+  assert.equal(await inspectDestination(unborn), 'empty-git');
+
+  await writeFile(path.join(unborn, '.git', 'refs', 'heads', 'main'), 'a'.repeat(40));
+  await assert.rejects(inspectDestination(unborn), /empty destination directory/);
+
+  const otherHistory = path.join(root, 'other-history');
+  await mkdir(path.join(otherHistory, '.git', 'refs', 'heads'), { recursive: true });
+  await writeFile(path.join(otherHistory, '.git', 'HEAD'), 'ref: refs/heads/main\n');
+  await writeFile(path.join(otherHistory, '.git', 'refs', 'heads', 'old'), 'b'.repeat(40));
+  await assert.rejects(inspectDestination(otherHistory), /empty destination directory/);
+
+  const occupied = path.join(root, 'occupied');
+  await mkdir(occupied);
+  await writeFile(path.join(occupied, 'notes.md'), 'not empty');
+  await assert.rejects(inspectDestination(occupied), /empty destination directory/);
+});
+
+test('accepts only custom domains GitHub Pages can secure', () => {
+  assert.deepEqual(customDomain('Blog.Example.com.'), { host: 'blog.example.com' });
+  assert.match(customDomain(`a.${'b'.repeat(62)}.example.com`).error, /shorter than 64/);
+  assert.match(customDomain('writer.github.io').error, /outside github\.io/);
+  assert.match(customDomain('https://blog.example.com/path').error, /without a protocol/);
 });

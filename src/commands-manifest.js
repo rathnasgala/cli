@@ -1,5 +1,6 @@
 import { auth } from './commands/auth.js';
 import { doctor } from './commands/doctor.js';
+import { domain } from './commands/domain.js';
 import { init } from './commands/init.js';
 import { createPost } from './commands/new.js';
 import { preview } from './commands/preview.js';
@@ -7,7 +8,7 @@ import { publish } from './commands/publish.js';
 import { upgrade } from './commands/upgrade.js';
 
 /**
- * Six commands, in the order a writer meets them.
+ * Commands in the order a writer meets them.
  *
  * v0 had fifteen, and the extra nine were the ones nobody could keep working: a `validate` a hook
  * ran behind the writer's back, a `workflow` writer for a file the server owns, a
@@ -28,11 +29,16 @@ export const COMMANDS = {
     run: auth
   },
   init: {
-    summary: 'Create a publication and clone it here',
-    usage: 'gala init [--name my-notes] [--here]',
-    flags: ['name', 'api-base-url'],
-    switches: ['here'],
+    summary: 'Create a publication in an empty directory',
+    usage: 'gala init [directory] [--name my-notes] [--domain blog.example.com]',
+    flags: ['name', 'domain', 'api-base-url'],
     run: init
+  },
+  domain: {
+    summary: 'Inspect or change this publication’s custom domain',
+    usage: 'gala domain [status|set <hostname>|check|cancel|remove] [--root path]',
+    flags: ['root', 'api-base-url'],
+    run: domain
   },
   new: {
     summary: 'Start a post',

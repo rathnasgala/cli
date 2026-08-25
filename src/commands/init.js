@@ -5,8 +5,9 @@ import { galaApi } from '../api/gala.js';
 import { githubApi } from '../api/github.js';
 import { galaCredential } from '../auth/gala.js';
 import { githubCredential } from '../auth/github.js';
-import { cloneRepository, createGit } from '../git.js';
+import { cloneRepository, createGit, populateEmptyRepository } from '../git.js';
 import { UsageError } from '../cli/args.js';
+import { customDomain } from '../domain.js';
 
 /**
  * Creates a publication and leaves a working checkout behind.
@@ -32,15 +33,20 @@ const GITHUB_APP_INSTALLATION_URL = 'https://github.com/apps/gala67-app/installa
 
 export async function init({ terminal, options, cwd = process.cwd() }) {
   const explicitName = options.value('name');
-  const here = options.on('here');
-  const target = here ? cwd : undefined;
+  if (options.positional.length > 1) {
+    throw new UsageError('init accepts at most one destination directory');
+  }
+  const directory = path.resolve(cwd, options.positional[0] ?? '.');
+  const requestedDomain = options.value('domain');
+  const checkedDomain = requestedDomain == null ? null : customDomain(requestedDomain);
+  if (checkedDomain?.error) throw new UsageError(checkedDomain.error);
+
+  const destination = await inspectDestination(directory);
 
   const gala = await galaCredential({ terminal, apiBaseUrl: options.value('api-base-url') });
   const github = await githubCredential({ terminal });
 
-  const name = await publicationName({ terminal, explicitName, here, cwd });
-  const directory = path.resolve(cwd, target ?? name);
-  await refuseOccupied(directory, here);
+  const name = await publicationName({ terminal, explicitName, directory });
 
   const api = galaApi({ baseUrl: gala.apiBaseUrl, token: gala.accessToken });
   const capability = await api.githubCapability(github.accessToken);
@@ -55,11 +61,13 @@ export async function init({ terminal, options, cwd = process.cwd() }) {
   await waitForContent(githubApi(github.accessToken), created.owner, created.name);
 
   terminal.step('Cloning');
-  await cloneRepository({
+  const checkout = {
     url: `https://github.com/${created.owner}/${created.name}.git`,
     target: directory,
     token: github.accessToken
-  });
+  };
+  if (destination === 'empty-git') await populateEmptyRepository(checkout);
+  else await cloneRepository(checkout);
 
   terminal.step('Registering the publication');
   const git = createGit({ root: directory, token: github.accessToken });
@@ -82,8 +90,26 @@ export async function init({ terminal, options, cwd = process.cwd() }) {
   terminal.done(`Created ${created.owner}/${created.name}`);
   terminal.result(publicationUrl(registration, created));
   terminal.note(path.relative(cwd, directory) || '.');
+
+  let domainChange;
+  if (checkedDomain?.host) {
+    terminal.step(`Reserving ${checkedDomain.host}`);
+    try {
+      domainChange = await api.prepareTopologyChange(registration.siteId, {
+        canonicalBaseUrl: `https://${checkedDomain.host}`,
+        pathPrefix: '/'
+      });
+    } catch (failure) {
+      throw new Error(
+        `${created.owner}/${created.name} was created, but ${checkedDomain.host} was not reserved: `
+          + `${failure instanceof Error ? failure.message : 'unknown error'}`
+      );
+    }
+  }
+
   terminal.blank();
   terminal.note('gala new "Your first post"');
+  if (domainChange) terminal.note('gala domain check');
 
   return { owner: created.owner, name: created.name, siteId: registration.siteId, root: directory };
 }
@@ -183,8 +209,8 @@ async function waitForContent(github, owner, name, { attempts = 30, intervalMs =
   throw new Error(`${owner}/${name} was created but is still empty. Try again in a moment.`);
 }
 
-async function publicationName({ terminal, explicitName, here, cwd }) {
-  const proposed = explicitName ?? (here ? path.basename(path.resolve(cwd)) : undefined);
+async function publicationName({ terminal, explicitName, directory }) {
+  const proposed = explicitName ?? path.basename(directory);
   const answer = proposed ?? await terminal.ask('What should this publication be called?');
   const name = slugify(answer);
   if (name == null) {
@@ -199,19 +225,44 @@ export function slugify(value) {
   return NAME.test(slug) ? slug : null;
 }
 
-async function refuseOccupied(directory, here) {
-  const { readdir } = await import('node:fs/promises');
+export async function inspectDestination(directory) {
+  const { readFile, readdir, stat } = await import('node:fs/promises');
   let entries;
   try {
     entries = await readdir(directory);
   } catch (missing) {
-    if (missing?.code === 'ENOENT') return;
+    if (missing?.code === 'ENOENT') return 'missing';
     throw missing;
   }
-  if (entries.length === 0) return;
-  throw new UsageError(here
-    ? 'This folder is not empty. Run it in an empty folder, or without --here.'
-    : `${path.basename(directory)} already exists and is not empty.`);
+  if (entries.length === 0) return 'empty';
+  if (entries.length === 1 && entries[0] === '.git') {
+    const gitDirectory = path.join(directory, '.git');
+    if (!(await stat(gitDirectory)).isDirectory()) {
+      throw new UsageError('The destination has a linked .git file; use a new empty directory.');
+    }
+    const head = (await readFile(path.join(gitDirectory, 'HEAD'), 'utf8')).trim();
+    const branch = /^ref: (refs\/heads\/.+)$/.exec(head)?.[1];
+    if (branch) {
+      const packed = await readFile(path.join(gitDirectory, 'packed-refs'), 'utf8')
+        .then((source) => source.split('\n').some((line) => line && !line.startsWith('#')),
+          (failure) => failure?.code === 'ENOENT' ? false : Promise.reject(failure));
+      if (!await hasReference(path.join(gitDirectory, 'refs')) && !packed) return 'empty-git';
+    }
+  }
+  throw new UsageError('Gala needs an empty destination directory (an empty git repository is allowed).');
+}
+
+async function hasReference(directory) {
+  const { readdir } = await import('node:fs/promises');
+  const entries = await readdir(directory, { withFileTypes: true }).catch((failure) => {
+    if (failure?.code === 'ENOENT') return [];
+    throw failure;
+  });
+  for (const entry of entries) {
+    if (!entry.isDirectory()) return true;
+    if (await hasReference(path.join(directory, entry.name))) return true;
+  }
+  return false;
 }
 
 function publicationUrl(registration, created) {

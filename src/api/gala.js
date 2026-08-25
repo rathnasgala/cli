@@ -92,6 +92,35 @@ export function galaApi({ baseUrl = DEFAULT_API_BASE_URL, token } = {}) {
       return requestJson(`${root}/v1/me/sites`, authorized('Publication list'));
     },
 
+    prepareTopologyChange(siteId, body) {
+      return requestJson(`${root}/v1/sites/${encodeURIComponent(siteId)}/topology-changes/prepare`,
+        authorized('Custom domain reservation', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify(body)
+        }));
+    },
+
+    pendingTopologyChange(siteId) {
+      return requestJson(`${root}/v1/sites/${encodeURIComponent(siteId)}/topology-changes/pending`,
+        authorized('Custom domain status'));
+    },
+
+    configureTopologyChange(siteId, changeId) {
+      return requestJson(`${root}/v1/sites/${encodeURIComponent(siteId)}/topology-changes/${encodeURIComponent(changeId)}/configure`,
+        authorized('GitHub Pages domain verification', { method: 'POST' }));
+    },
+
+    commitTopologyChange(siteId, changeId) {
+      return requestJson(`${root}/v1/sites/${encodeURIComponent(siteId)}/topology-changes/${encodeURIComponent(changeId)}/commit`,
+        authorized('Custom domain activation', { method: 'POST' }));
+    },
+
+    discardTopologyChange(siteId, changeId) {
+      return request(`${root}/v1/sites/${encodeURIComponent(siteId)}/topology-changes/${encodeURIComponent(changeId)}`,
+        authorized('Custom domain cancellation', { method: 'DELETE' }));
+    },
+
     /** Not in the OpenAPI document, though the endpoint exists and is public. */
     async signInConfiguration() {
       return requestJson(`${root}/v1/auth/configuration`, { action: 'Sign-in configuration' });

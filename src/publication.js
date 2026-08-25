@@ -21,6 +21,8 @@ export async function readPublication(root) {
       ? configuration.hosting.pathPrefix
       : '/';
     return {
+      siteId: configuration?.site?.id,
+      repository: configuration?.site?.repository,
       name: configuration?.site?.name,
       defaultLanguage: configuration?.site?.defaultLanguage ?? 'en',
       url: `${base.replace(/\/$/, '')}${prefix === '/' ? '' : prefix}/`

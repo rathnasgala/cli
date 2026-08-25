@@ -3,7 +3,7 @@ import test from 'node:test';
 
 import { UsageError, parseArguments } from '../src/cli/args.js';
 
-const spec = { flags: ['name', 'root'], switches: ['here'] };
+const spec = { flags: ['name', 'root'], switches: ['force'] };
 
 test('reads both --name value and --name=value', () => {
   assert.equal(parseArguments(['--name', 'notes'], spec).value('name'), 'notes');
@@ -27,13 +27,13 @@ test('refuses a repeated option rather than picking one silently', () => {
 
 test('refuses a flag with no value, including one swallowed by the next flag', () => {
   assert.throws(() => parseArguments(['--name'], spec), /needs a value/);
-  assert.throws(() => parseArguments(['--name', '--here'], spec), /needs a value/);
+  assert.throws(() => parseArguments(['--name', '--force'], spec), /needs a value/);
 });
 
 test('switches are present or absent, never valued', () => {
-  assert.equal(parseArguments(['--here'], spec).on('here'), true);
-  assert.equal(parseArguments([], spec).on('here'), false);
-  assert.throws(() => parseArguments(['--here=yes'], spec), /takes no value/);
+  assert.equal(parseArguments(['--force'], spec).on('force'), true);
+  assert.equal(parseArguments([], spec).on('force'), false);
+  assert.throws(() => parseArguments(['--force=yes'], spec), /takes no value/);
 });
 
 test('keeps positional arguments in order', () => {
