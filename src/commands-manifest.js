@@ -5,6 +5,7 @@ import { init } from './commands/init.js';
 import { createPost } from './commands/new.js';
 import { preview } from './commands/preview.js';
 import { publish } from './commands/publish.js';
+import { prism } from './commands/prism.js';
 import { upgrade } from './commands/upgrade.js';
 
 /**
@@ -56,6 +57,13 @@ export const COMMANDS = {
     flags: ['root', 'today'],
     switches: ['skip-checks'],
     run: publish
+  },
+  prism: {
+    summary: 'Manage author-approved Prism configurations',
+    usage: 'gala prism <status|mode|link-policy|list|create|edit|generate|submit|approve|reject|revoke> [arguments]',
+    flags: ['root', 'api-base-url', 'language', 'depth', 'intent', 'modality', 'file', 'reason'],
+    switches: ['yes'],
+    run: prism
   },
   upgrade: {
     summary: 'Inspect and apply a verified managed-theme update',

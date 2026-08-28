@@ -157,6 +157,7 @@ export function galaApi({ baseUrl = DEFAULT_API_BASE_URL, token } = {}) {
       throw new Error(`Gala sign-in failed: ${body?.error_description ?? body?.error ?? response.status}`);
     },
 
-    request: (path, options) => request(`${root}${path}`, authorized(options?.action ?? path, options))
+    request: (path, options) => request(`${root}${path}`, authorized(options?.action ?? path, options)),
+    json: (path, options) => requestJson(`${root}${path}`, authorized(options?.action ?? path, options))
   };
 }

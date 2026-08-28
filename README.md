@@ -62,6 +62,25 @@ npx --yes @rathnasgala/cli@latest publish
 Checks your content, records it, and sends it to GitHub. GitHub builds and deploys from there; the
 site updates a minute or two later.
 
+## Prism configurations
+
+Prism keeps one canonical work while letting you explicitly approve alternate reading depths and
+intents. The CLI uses Gala's public lifecycle API; it never writes approval artifacts itself.
+
+```console
+npx --yes @rathnasgala/cli@latest prism status
+npx --yes @rathnasgala/cli@latest prism create my-post --language en --depth brief --intent orientation
+npx --yes @rathnasgala/cli@latest prism list my-post --language en
+```
+
+Use `prism edit`, `submit`, `approve`, `reject`, and `revoke` to advance a configuration. Approval,
+rejection, revocation, and reducing the publication mode require terminal confirmation or `--yes`.
+Configuration links default to `nofollow`; change the publication or one work with
+`prism link-policy` when ordinary followed links are intentional. Commands that change repository
+artifacts stay attached through Gala's materialization and GitHub Pages publication states, then
+print the live publication address or a concrete terminal failure. Proposal generation likewise
+waits until its revision is ready for review or generation fails.
+
 ## Custom domain
 
 Reserve a domain after setup, then advance the verified GitHub Pages flow as DNS propagates:
@@ -101,6 +120,7 @@ Run any command with `--help`.
 | `new` | Start a post | `--language`, `--root`, `--today` |
 | `preview` | Build and serve the publication locally | `--root`, `--today` |
 | `publish` | Check, record and send your work to GitHub | `--root`, `--today`, `--skip-checks` |
+| `prism` | Manage author-approved reading configurations | `--root`, `--language`, `--depth`, `--intent`, `--modality`, `--file`, `--reason`, `--yes` |
 | `upgrade` | Inspect and apply a verified managed-theme update | `--root`, `--channel`, `--yes` |
 | `doctor` | Check a publication and say what is wrong | `--root` |
 | `auth` | Sign in to Gala and GitHub | — |
