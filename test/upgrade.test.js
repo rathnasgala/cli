@@ -8,7 +8,6 @@ import { c as createTar } from 'tar';
 
 import { upgrade } from '../src/commands/upgrade.js';
 
-const root = path.resolve(new URL('../../site-template', import.meta.url).pathname);
 const options = (values = {}, switches = {}) => ({
   value: (name) => values[name],
   on: (name) => switches[name] === true,
@@ -24,7 +23,19 @@ const terminal = () => {
   };
 };
 
+async function installedSite(version = '2.0.0') {
+  const root = await mkdtemp(path.join(tmpdir(), 'gala-upgrade-installed-'));
+  await mkdir(path.join(root, '.gala'), { recursive: true });
+  await writeFile(path.join(root, '.gala', 'managed-files.json'), JSON.stringify({
+    schemaVersion: 1,
+    themePackage: { name: '@rathnasgala/theme', version },
+    files: {},
+  }));
+  return root;
+}
+
 test('reports an exact current release without downloading or changing files', async () => {
+  const root = await installedSite();
   const output = terminal();
   const installed = JSON.parse(await readFile(path.join(root, '.gala', 'managed-files.json'), 'utf8'));
   const version = installed.themePackage.version;
@@ -40,6 +51,7 @@ test('reports an exact current release without downloading or changing files', a
 });
 
 test('refuses a channel outside the two documented release tracks', async () => {
+  const root = await installedSite();
   await assert.rejects(
     () => upgrade({ terminal: terminal(), options: options({ root, channel: 'beta' }) }),
     /channel must be latest or next/,

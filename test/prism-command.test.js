@@ -1,12 +1,14 @@
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
-import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
+import { mkdtemp, writeFile } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
+
+import { credentialEnvironment } from './credential-fixture.js';
 
 const run = promisify(execFile);
 const entry = fileURLToPath(new URL('../src/index.js', import.meta.url));
@@ -15,7 +17,7 @@ const articleId = '01M0T5Z4FBK60HTS7FH8JK06QL';
 const configurationId = '01M0T5Z4FBK60HTS7FH8JK06QM';
 const revisionId = '01M0T5Z4FBK60HTS7FH8JK06QP';
 
-test('Prism status and create use committed server state and an idempotency key', async (context) => {
+test('Prism status and create use committed server state and an idempotency key', { timeout: 15_000 }, async (context) => {
   const root = await mkdtemp(path.join(tmpdir(), 'gala-prism-'));
   const home = await mkdtemp(path.join(tmpdir(), 'gala-home-'));
   await writeFile(path.join(root, 'site.config.yml'), `site:\n  id: ${siteId}\n  defaultLanguage: en\nhosting:\n  canonicalBaseUrl: https://writer.github.io\n  pathPrefix: /notes\n`);
@@ -161,14 +163,12 @@ test('Prism status and create use committed server state and an idempotency key'
   const address = server.address();
   if (!address || typeof address === 'string') throw new Error('Test server did not bind');
   const apiBaseUrl = `http://127.0.0.1:${address.port}`;
-  const credentialDirectory = path.join(home, 'Library', 'Application Support', 'Gala');
-  await mkdir(credentialDirectory, { recursive: true });
-  await writeFile(path.join(credentialDirectory, 'credentials.json'), `${JSON.stringify({
-    schemaVersion: 2, accessToken: 'test-token', apiBaseUrl,
-    expiresAt: new Date(Date.now() + 60_000).toISOString(),
-  })}\n`);
+  const environment = await credentialEnvironment(home, {
+    accessToken: 'test-token', apiBaseUrl,
+    expiresAt: new Date(Date.now() + 300_000).toISOString(),
+  });
   const invoke = (args) => run(process.execPath, [entry, ...args], {
-    cwd: root, env: { ...process.env, HOME: home, NO_COLOR: '1' },
+    cwd: root, env: environment,
   });
   await run('git', ['init'], { cwd: root });
 
