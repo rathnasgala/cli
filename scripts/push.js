@@ -6,7 +6,7 @@ import { readFileSync } from 'node:fs';
  *
  * This used to bump the patch unconditionally, which is right for the ordinary case and wrong for
  * every deliberate version. Setting `1.0.0` by hand and running this produced `1.0.1`, with no
- * `1.0.0` on npm at all — the release you meant to make would simply not exist, and nothing would
+ * `1.0.0` on npm at all - the release you meant to make would simply not exist, and nothing would
  * say so.
  *
  * The tag is the record of what has shipped, so it decides: an untagged version is one nobody has

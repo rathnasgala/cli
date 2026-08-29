@@ -25,7 +25,7 @@ test('assembles the address a writer would otherwise have to guess at', async ()
   /*
    * The CLI knew every part of this and never said it: `new` printed a file path and `publish` said
    * the site would appear shortly. The language segment is not obvious from anything the writer
-   * typed — it is not in the title, the filename or the folder — and being unable to find your own
+   * typed - it is not in the title, the filename or the folder - and being unable to find your own
    * post is a poor first minute with a publishing tool.
    */
   const found = await readPublication(await publication(complete));

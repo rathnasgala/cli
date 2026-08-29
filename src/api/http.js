@@ -1,7 +1,7 @@
 /**
  * Every HTTP call the CLI makes, and every failure it reports.
  *
- * v0 threw away the response body at all twenty failure sites — `failed with HTTP 403` and nothing
+ * v0 threw away the response body at all twenty failure sites - `failed with HTTP 403` and nothing
  * else. GitHub explains which 403 it is in that body and nowhere else: an organisation's OAuth App
  * restrictions, a missing permission, a rename and a rate limit all arrive as 403 with a sentence
  * telling them apart. Diagnosing anything meant guessing between causes the server had already
@@ -67,6 +67,6 @@ function describe(body) {
   if (parts.length === 0 && typeof body.raw === 'string') parts.push(body.raw);
   if (typeof body.documentation_url === 'string') parts.push(`See ${body.documentation_url}`);
 
-  const detail = parts.join(' — ').replace(/\s+/g, ' ').trim();
+  const detail = parts.join(' - ').replace(/\s+/g, ' ').trim();
   return detail.length > MAX_DETAIL ? `${detail.slice(0, MAX_DETAIL)}…` : detail;
 }

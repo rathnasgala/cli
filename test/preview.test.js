@@ -53,7 +53,7 @@ test.beforeEach(async () => {
 test('installs the publication tooling the first time, and says why it is waiting', async () => {
   /*
    * A freshly cloned publication has no node_modules. v0 spawned eleventy from it regardless, so a
-   * writer's first preview died with a raw Node module-resolution stack — the least actionable
+   * writer's first preview died with a raw Node module-resolution stack - the least actionable
    * failure in the CLI. They should not need to know npm is involved at all.
    */
   const { calls, spawnProcess } = runner();
@@ -77,11 +77,39 @@ test('does not reinstall when the tooling is already there', async () => {
   assert.ok(!output.said('step').some((m) => /first time only/.test(m)));
 });
 
+test('validates through the read-only preview manifest contract', async () => {
+  await eleventyPresent();
+  let received;
+  const regenerate = async (options) => {
+    received = options;
+    return { results: [] };
+  };
+  const { spawnProcess } = runner();
+
+  await preview({ terminal: terminal(), options, cwd: root, spawnProcess, regenerate });
+
+  assert.equal(received.preview, true);
+});
+
 test('a failed install reports npm’s own words rather than a module-resolution stack', async () => {
   const { spawnProcess } = runner({ installs: false });
   await assert.rejects(
     preview({ terminal: terminal(), options, cwd: root, spawnProcess, regenerate: nothingToCheck }),
-    /Installing the preview tooling failed/);
+    /could not install the preview dependencies/);
+});
+
+test('a failed build explains where its exact cause was printed and what to do next', async () => {
+  await eleventyPresent();
+  const spawnProcess = () => {
+    const child = new EventEmitter();
+    queueMicrotask(() => child.emit('exit', 1, null));
+    return child;
+  };
+
+  await assert.rejects(
+    preview({ terminal: terminal(), options, cwd: root, spawnProcess, regenerate: nothingToCheck }),
+    /preview build failed with exit code 1.*Review the build output above.*run preview again/
+  );
 });
 
 test('stopping the preview with Ctrl-C is not a failure', async () => {

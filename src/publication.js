@@ -8,8 +8,8 @@ import { parse } from 'yaml';
  *
  * The CLI knew every part of this and never said it: `new` printed a file path, `publish` said the
  * site would appear shortly, and the writer was left to assemble
- * `{canonicalBaseUrl}{pathPrefix}/{language}/{slug}/` themselves. That is easy to get wrong — the
- * language segment is not obvious from anything they typed — and being unable to find your own post
+ * `{canonicalBaseUrl}{pathPrefix}/{language}/{slug}/` themselves. That is easy to get wrong - the
+ * language segment is not obvious from anything they typed - and being unable to find your own post
  * is a poor first minute with a publishing tool.
  */
 export async function readPublication(root) {

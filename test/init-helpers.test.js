@@ -19,8 +19,8 @@ test('turns what a writer types into something GitHub accepts as a repository na
 
 test('links to the one installation that needs the grant, on the right settings path', () => {
   /*
-   * GitHub offers no API to add a repository to an installation on the writer's behalf — it is
-   * documented as classic-PAT-only — so this always ends in a click, and the only thing worth
+   * GitHub offers no API to add a repository to an installation on the writer's behalf - it is
+   * documented as classic-PAT-only - so this always ends in a click, and the only thing worth
    * optimising is whether that click is one link away or a hunt through every app they have ever
    * installed. User and organisation installations live on different paths.
    */

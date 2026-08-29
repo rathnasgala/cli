@@ -5,7 +5,7 @@ import { requestJson } from './http.js';
  *
  * The CLI holds a GitHub App user token, not an OAuth App token. That single difference is what
  * separates this from v0: an App token can list installations, is not blocked by an organisation's
- * OAuth App restrictions, and reaches only repositories the App has been given — rather than every
+ * OAuth App restrictions, and reaches only repositories the App has been given - rather than every
  * repository the writer can see, which is what `repo` scope meant.
  */
 const API = 'https://api.github.com';
@@ -33,7 +33,7 @@ export function githubApi(token) {
      * Whether a repository has content yet.
      *
      * Creating a repository is asynchronous: GitHub answers with a clone URL before the template
-     * lands. Cloning into that window produces an empty checkout and a missing site.config.yml —
+     * lands. Cloning into that window produces an empty checkout and a missing site.config.yml -
      * a confusing error about a file the template certainly contains. `size` is not usable as the
      * signal; GitHub still reported 0 for a repository that already had commits.
      */

@@ -34,7 +34,7 @@ test('surfaces the specific reason inside an errors array', async () => {
     errors: [{ message: 'name already exists on this account' }]
   }));
   await assert.rejects(request('https://api.github.com/x', { action: 'Repository creation' }),
-    /Repository creation failed\. — name already exists on this account/);
+    /Repository creation failed\. - name already exists on this account/);
 });
 
 test('keeps the API error code so a caller can branch on it', async () => {

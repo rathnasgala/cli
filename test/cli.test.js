@@ -17,7 +17,7 @@ const invoke = (args, options = {}) => run(process.execPath, [entry, ...args], {
 
 test('lists the eight supported author commands and no removed internals', async () => {
   /*
-   * v0 had fifteen. The extra nine were the ones nobody could keep working — a `validate` a hook
+   * v0 had fifteen. The extra nine were the ones nobody could keep working - a `validate` a hook
    * ran behind the writer's back, a `workflow` writer for a file the server owns, a
    * `record-deployment` nothing called. Each was a surface to keep correct and a way to be wrong.
    */

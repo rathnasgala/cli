@@ -3,8 +3,8 @@ import { request, requestJson } from './http.js';
 /**
  * The Gala API.
  *
- * Only the calls the six commands make. v0 carried a generated client covering the whole surface —
- * comments, reactions, admin, moderation — none of which a CLI ever touches.
+ * Only the calls the six commands make. v0 carried a generated client covering the whole surface -
+ * comments, reactions, admin, moderation - none of which a CLI ever touches.
  */
 export const DEFAULT_API_BASE_URL = 'https://api.gala67.com';
 

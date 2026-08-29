@@ -8,7 +8,7 @@ import path from 'node:path';
  * which is a different identity from the one the CLI just authenticated with. On the machine where
  * this surfaced the token belonged to one account and git's stored credential to another, so a
  * scaffold created the repository through the API and was then refused when it tried to write to
- * it. Anyone with no credential configured at all — a fresh machine, or SSH-only — had no chance.
+ * it. Anyone with no credential configured at all - a fresh machine, or SSH-only - had no chance.
  *
  * The token travels in the environment, never in the argument list, because arguments are readable
  * machine-wide through `ps`. Nothing is written to `.git/config`.
@@ -100,11 +100,9 @@ export function createGit({ root, token, spawnProcess = spawn } = {}) {
      * Brings the remote's commits in, over the top of anything uncommitted.
      *
      * `--autostash` matters: this runs before the writer's work is recorded, and a rebase refuses a
-     * dirty tree. Doing it the other way round — record first, then rebase — is what produced
-     * conflicts in `content/posts/*`: validation assigns a content id to any post missing one, and
-     * the publish workflow assigns one remotely too. Both sides edit the same file, pick different
-     * ids, and git can only call that a conflict. Taking the remote first means the local pass sees
-     * ids that already exist and changes nothing.
+     * dirty tree. Doing it the other way round - record first, then rebase - lets the publication
+     * workflow and the local publish independently update the same file. Taking the remote first
+     * makes the post-publish validation pass the sole local writer of any missing content ID.
      */
     async takeRemote() {
       const branch = await git.branch();

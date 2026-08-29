@@ -5,7 +5,7 @@ import { credentialPath, forgetCredential, readCredential, writeCredential } fro
  * The Gala sign-in.
  *
  * A stored credential is checked against the server before anything depends on it, because one
- * that parses and has not expired can still be one the API refuses — and discovering that four
+ * that parses and has not expired can still be one the API refuses - and discovering that four
  * calls later, as an opaque 401 from whichever endpoint got there first, is how a "sign in again"
  * became a stack trace.
  */

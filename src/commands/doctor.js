@@ -12,7 +12,7 @@ import { createGit } from '../git.js';
  *
  * Every check reports one of three things and never guesses between them: it is fine, it is wrong
  * and here is the fix, or it could not be determined. That third state is the one v0 kept
- * collapsing into the second — an unreachable GitHub reported as "the App is not installed" sent
+ * collapsing into the second - an unreachable GitHub reported as "the App is not installed" sent
  * writers to install something that was already installed, repeatedly.
  */
 export async function doctor({ terminal, options, cwd = process.cwd() }) {
@@ -46,7 +46,7 @@ export async function doctor({ terminal, options, cwd = process.cwd() }) {
     const source = await readFile(workflow, 'utf8');
     const siteId = /site-id:\s*([0-9A-Z]{26})/.exec(source)?.[1];
     return siteId == null
-      ? wrong('no site id — this publication may not be registered', cliCommand('init'))
+      ? wrong('no site id - this publication may not be registered', cliCommand('init'))
       : ok(siteId);
   }, 'the workflow is missing; registration writes it'));
 
@@ -61,9 +61,9 @@ export async function doctor({ terminal, options, cwd = process.cwd() }) {
 
   terminal.blank();
   for (const { name, state, detail, fix } of checks) {
-    if (state === 'ok') terminal.done(`${name} — ${detail}`);
-    else if (state === 'wrong') terminal.fail(`${name} — ${detail}`);
-    else terminal.step(`${name} — could not be determined: ${detail}`);
+    if (state === 'ok') terminal.done(`${name} - ${detail}`);
+    else if (state === 'wrong') terminal.fail(`${name} - ${detail}`);
+    else terminal.step(`${name} - could not be determined: ${detail}`);
     if (fix) terminal.note(fix);
   }
 

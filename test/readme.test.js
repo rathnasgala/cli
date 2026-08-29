@@ -9,7 +9,7 @@ const readme = await readFile(new URL('../README.md', import.meta.url), 'utf8');
 test('documents every command that exists, and nothing that does not', () => {
   /*
    * v0's README outlived its commands by weeks: it taught a `connect` command that never existed,
-   * and kept documenting nine that had been removed. Documentation that drifts is worse than none —
+   * and kept documenting nine that had been removed. Documentation that drifts is worse than none -
    * a writer trusts it and loses an afternoon. Nothing tied the two together until now.
    */
   // Matched as an invocation rather than as a word: "the publishing workflow" is a noun, and a

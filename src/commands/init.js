@@ -22,7 +22,7 @@ import { customDomain } from '../domain.js';
  *     which is why repositories it created never appeared in the web UI.
  *   - The **server** writes `site.config.yml` and the publish workflow during registration. The CLI
  *     used to write its own versions afterwards and commit them, producing a second commit whose
- *     entire content was rewriting one line and stripping comments — and a second workflow run that
+ *     entire content was rewriting one line and stripping comments - and a second workflow run that
  *     collided with the first one's deployment record and failed.
  *   - **GitHub** turns on Pages by itself once publishing creates a `gh-pages` branch. The CLI used
  *     to poll ten minutes for a run it had caused, then call an API that changed nothing.
@@ -120,7 +120,7 @@ export async function init({ terminal, options, cwd = process.cwd() }) {
  * Creation is a conversation, not a single call.
  *
  * `NEEDS_SHARING` means the repository exists with the right content and the App installation
- * simply cannot see it — an installation scoped to selected repositories, which is the right way to
+ * simply cannot see it - an installation scoped to selected repositories, which is the right way to
  * have it. That is one grant away from working, and GitHub offers no API to do it on the writer's
  * behalf: adding a repository to an installation is documented as classic-PAT-only. So it is asked
  * for, with a link to the one page that grants it.
@@ -152,7 +152,7 @@ async function createPublication({ terminal, api, capability, name, github, inst
     const owner = result?.owner ?? '';
     terminal.blank();
     terminal.step(`${owner}/${result?.name ?? name} exists, but Gala cannot reach it yet`);
-    terminal.note('its installation covers only selected repositories — add this one');
+    terminal.note('its installation covers only selected repositories - add this one');
     terminal.openUrl(result?.recoveryUrl
       ?? installationUrl(result?.installationId, owner, await viewerOf(github)));
     if (!await terminal.waitForEnter('Once Gala can access it')) {
@@ -218,7 +218,7 @@ export function installationUrl(installationId, owner, selfLogin) {
 
 /**
  * GitHub answers the creation call before the template content lands. Cloning into that window
- * gives an empty checkout and a missing site.config.yml — a confusing error about a file the
+ * gives an empty checkout and a missing site.config.yml - a confusing error about a file the
  * template certainly contains.
  */
 async function waitForContent(github, owner, name, { attempts = 30, intervalMs = 1000 } = {}) {
@@ -234,7 +234,7 @@ async function publicationName({ terminal, explicitName, directory }) {
   const answer = proposed ?? await terminal.ask('What should this publication be called?');
   const name = slugify(answer);
   if (name == null) {
-    throw new UsageError(`"${answer}" cannot be a repository name — use letters, numbers and hyphens`);
+    throw new UsageError(`"${answer}" cannot be a repository name - use letters, numbers and hyphens`);
   }
   return name;
 }

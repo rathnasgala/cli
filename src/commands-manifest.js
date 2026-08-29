@@ -18,7 +18,7 @@ import { cliCommand } from './cli/invocation.js';
  * Each was a surface to keep correct and a way to be wrong.
  *
  * This lives apart from the dispatcher so the README can be checked against it. v0's README
- * outlived its commands by weeks — it taught a command that never existed — because nothing tied
+ * outlived its commands by weeks - it taught a command that never existed - because nothing tied
  * the two together.
  *
  * Each entry carries its own options. Nothing is parsed globally, so an option cannot mean two

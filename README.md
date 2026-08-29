@@ -1,6 +1,6 @@
 # Gala CLI
 
-Create a publication, write posts, preview them, and publish — from your terminal.
+Create a publication, write posts, preview them, and publish - from your terminal.
 
 ## Requirements
 
@@ -39,7 +39,7 @@ On the first run, it opens GitHub's Gala App installation page. Choose the accou
 finish the installation, and return to the terminal; the same command resumes automatically.
 
 If the Gala GitHub App has not been given access to the new repository, it says so and links to the
-one page that grants it — GitHub has no way for an app to grant itself access, so that click is
+one page that grants it - GitHub has no way for an app to grant itself access, so that click is
 unavoidable. Everything else is automatic.
 
 ## Write
@@ -63,7 +63,7 @@ npx --yes @rathnasgala/cli@latest preview
 ```
 
 Builds the publication and serves it locally, using the exact framework version the repository is
-pinned to — so what you see is what gets published. The first run installs that tooling, which takes
+pinned to - so what you see is what gets published. The first run installs that tooling, which takes
 a moment. Stop it with Ctrl-C.
 
 ```console
@@ -118,7 +118,7 @@ npx --yes @rathnasgala/cli@latest upgrade
 
 Reports on your sign-ins, the publication folder, the publishing workflow, and anything you have
 written but not sent. Each check either passes, names what is wrong and how to fix it, or says it
-could not be determined — never one of those disguised as another.
+could not be determined - never one of those disguised as another.
 
 ## Commands
 
@@ -134,13 +134,13 @@ Run any command with `--help`.
 | `prism` | Manage author-approved reading configurations | `--root`, `--language`, `--depth`, `--intent`, `--modality`, `--file`, `--reason`, `--yes` |
 | `upgrade` | Inspect and apply a verified managed-theme update | `--root`, `--channel`, `--yes` |
 | `doctor` | Check a publication and say what is wrong | `--root` |
-| `auth` | Sign in to Gala and GitHub | — |
+| `auth` | Sign in to Gala and GitHub | - |
 
 `auth` is never a prerequisite you have to remember: any command that needs a credential obtains
-one. It exists for when you want to do it deliberately — a new machine, or a different account.
+one. It exists for when you want to do it deliberately - a new machine, or a different account.
 
 Every command prompts for what it needs when run in a terminal, and every prompt has an option that
-supplies it instead. With no terminal attached — in CI — nothing is ever prompted for: a value that
+supplies it instead. With no terminal attached - in CI - nothing is ever prompted for: a value that
 cannot be worked out is an error naming the option, so an automated run fails immediately rather
 than waiting for an answer that will not come.
 
@@ -155,7 +155,7 @@ directory, with private file permissions. Your GitHub sign-in expires after eigh
 asks you to sign in again rather than quietly using a credential the server will refuse.
 
 Git operations use that same sign-in, not whatever credential your machine happens to have
-configured — so publishing works on a machine where those differ, or where none is configured.
+configured - so publishing works on a machine where those differ, or where none is configured.
 
 ## Troubleshooting
 

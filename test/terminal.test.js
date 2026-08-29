@@ -24,7 +24,7 @@ test('never prompts without a terminal, and says which option to pass instead', 
   /*
    * A prompt that silently resolves to a guess is worse than one that stops: in CI it would pick a
    * name nobody chose and create a repository under it. v0 decided this separately in each module,
-   * so behaviour with no terminal varied by code path — some hung, some crashed, some skipped.
+   * so behaviour with no terminal varied by code path - some hung, some crashed, some skipped.
    */
   const { terminal } = capture();
   assert.equal(terminal.interactive, false);

@@ -8,7 +8,7 @@ import path from 'node:path';
  * Two rules matter more than the storage itself, both learned the hard way:
  *
  * A credential is only valid if the server still accepts it. v0 checked expiry and nothing else, so
- * a token the API had already decided to refuse — it stopped issuing a claim these carried — was
+ * a token the API had already decided to refuse - it stopped issuing a claim these carried - was
  * handed out for weeks, and every command failed as an unexplained 401 several calls deep.
  *
  * A credential whose shape has changed is not upgradable in place. Bumping `schemaVersion` and

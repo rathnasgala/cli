@@ -7,7 +7,7 @@ import { spawn } from 'node:child_process';
  * v0 wrote to stdout from a dozen modules with no shared shape, so a scaffold emitted raw git
  * output, bare status codes and half-sentences in whatever order they happened to occur. The
  * failure mode that cost the most was subtler: prompts and browser launches were decided
- * separately in each module, so behaviour with no terminal attached varied by code path — some
+ * separately in each module, so behaviour with no terminal attached varied by code path - some
  * hung, some crashed, some silently skipped.
  *
  * One object, created once, knows whether there is a terminal. Nothing else has to ask.
@@ -50,7 +50,7 @@ export function createTerminal({
     async ask(question, { fallback } = {}) {
       if (!interactive) {
         if (fallback !== undefined) return fallback;
-        throw new Error(`${question} — no terminal to ask; pass it as an option instead`);
+        throw new Error(`${question} - no terminal to ask; pass it as an option instead`);
       }
       const reader = createInterface({ input, output });
       try {

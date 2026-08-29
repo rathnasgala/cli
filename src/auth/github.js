@@ -26,7 +26,7 @@ export async function githubCredential({
   if (stored != null) return stored;
 
   // No scopes. A GitHub App's permissions are fixed on the app and granted when the writer installs
-  // it, so there is nothing to negotiate — and nothing to warn them about, which is why the broad
+  // it, so there is nothing to negotiate - and nothing to warn them about, which is why the broad
   // "read/write on every repository you can access" notice is gone.
   const authorization = await post(DEVICE_CODE_URL, { client_id: clientId }, 'GitHub sign-in');
   terminal.step('Sign in to GitHub');
@@ -37,7 +37,7 @@ export async function githubCredential({
   await writeCredential(target, {
     accessToken: token.access_token,
     // The app expires user tokens after eight hours and issues a refresh token with each. Exchanging
-    // one needs the app's client secret, which a published CLI cannot hold — so it is kept for the
+    // one needs the app's client secret, which a published CLI cannot hold - so it is kept for the
     // API-side refresh, and until that exists an expired credential asks for one sign-in rather
     // than failing as an unexplained 401 somewhere deeper.
     ...(token.expires_in ? { expiresAt: new Date(now() + token.expires_in * 1000).toISOString() } : {}),

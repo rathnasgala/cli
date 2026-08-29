@@ -9,7 +9,7 @@ import { readPublication } from '../publication.js';
  * Builds the site and serves it locally.
  *
  * Eleventy is run from the publication's own `node_modules`, so the preview uses the exact
- * framework version the repository is pinned to — the same one the publish workflow will use. A
+ * framework version the repository is pinned to - the same one the publish workflow will use. A
  * preview that agrees with the local machine but not with production is worse than no preview.
  *
  * That pin is also why this installs dependencies when they are missing. A freshly cloned
@@ -24,21 +24,23 @@ export async function preview({
   const today = options.value('today');
 
   terminal.step('Checking content');
-  await checkContent({ terminal, root, today, ...(regenerate == null ? {} : { regenerate }) });
+  await checkContent({
+    terminal, root, today, preview: true, ...(regenerate == null ? {} : { regenerate })
+  });
   terminal.done('Content is valid');
 
   const eleventy = path.join(root, 'node_modules', '@11ty', 'eleventy', 'cmd.cjs');
   if (!await exists(eleventy)) {
-    terminal.step('Installing what this publication needs — first time only');
+    terminal.step('Installing what this publication needs - first time only');
     await install(root, spawnProcess);
     if (!await exists(eleventy)) {
-      throw new Error('The preview tooling is still missing after installing. Check package.json.');
+      throw new Error('Gala installed the publication dependencies, but the preview tool is still missing. Restore the managed package.json and package-lock.json files, then run preview again.');
     }
     terminal.done('Installed');
   }
 
   const publication = await readPublication(root);
-  terminal.step('Starting the preview — stop it with Ctrl-C');
+  terminal.step('Starting the preview - stop it with Ctrl-C');
   if (publication != null) terminal.note(`this is ${publication.name ?? 'your publication'} as it will look`);
   terminal.blank();
 
@@ -50,12 +52,17 @@ export async function preview({
   });
 
   return new Promise((resolve, reject) => {
-    child.once('error', reject);
+    child.once('error', (error) => {
+      reject(new Error(`The preview could not start: ${error.message}`));
+    });
     child.once('exit', (code, signal) => {
       // Ctrl-C is how a writer stops a preview; it is not a failure to report.
       if (signal === 'SIGINT' || signal === 'SIGTERM' || code === 0 || code === 130) resolve();
-      else if (signal) reject(new Error(`Preview stopped by ${signal}`));
-      else reject(new Error(`Preview exited with ${code}`));
+      else if (signal) {
+        reject(new Error(`The preview process was stopped by ${signal}. Review the build output above, correct the reported problem, and run preview again.`));
+      } else {
+        reject(new Error(`The preview build failed with exit code ${code}. Review the build output above, correct the reported problem, and run preview again.`));
+      }
     });
   });
 }
@@ -84,7 +91,7 @@ function install(root, spawnProcess) {
         resolve();
         return;
       }
-      const failure = new Error('Installing the preview tooling failed');
+      const failure = new Error('Gala could not install the preview dependencies. The package-manager output below contains the cause.');
       failure.detail = said.trim();
       reject(failure);
     });
