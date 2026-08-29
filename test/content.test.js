@@ -108,50 +108,62 @@ test('a validator that reports no warnings at all is not a crash', async () => {
   });
 });
 
-test('the packaged validator emits future-dated posts for preview without modifying them', async (context) => {
-  const root = await mkdtemp(path.join(tmpdir(), 'gala-cli-preview-contract-'));
-  context.after(() => rm(root, { recursive: true, force: true }));
-  await mkdir(path.join(root, '.gala'), { recursive: true });
-  await mkdir(path.join(root, 'content', 'posts', 'scheduled'), { recursive: true });
-  await writeFile(path.join(root, '.gala', 'managed-files.json'), JSON.stringify({
-    themePackage: {
-      name: '@rathnasgala/theme', version: '1.0.0', availableDesignThemes: ['editorial']
-    }
-  }));
-  await writeFile(path.join(root, 'site.config.yml'), [
-    'schemaVersion: 1',
-    'framework:',
-    '  themePackage:',
-    '    name: "@rathnasgala/theme"',
-    '    version: "1.0.0"',
-    'site:',
-    '  defaultLanguage: en',
-    '  timezone: UTC',
-    'hosting:',
-    '  canonicalBaseUrl: https://writer.example',
-    '  pathPrefix: /',
-    '  canonicalPolicy: self',
-    'design:',
-    '  theme: editorial'
-  ].join('\n'));
-  const post = path.join(root, 'content', 'posts', 'scheduled', 'index.en.md');
-  await writeFile(post, [
-    '---',
-    'title: Scheduled post',
-    'publishAfterDate: 2026-08-31',
-    'language: en',
-    '---',
-    '',
-    'Scheduled body.'
-  ].join('\n'));
-  const before = await readFile(post, 'utf8');
+test('the packaged validator honors legacy and current preview contracts without modifying posts', async (context) => {
+  const cases = [
+    { themeVersion: '2.0.12', publicationState: 'published', id: /^[0-7][0-9A-HJKMNP-TV-Z]{25}$/ },
+    { themeVersion: '2.0.15', publicationState: 'not-emitted', id: null }
+  ];
 
-  await checkContent({ terminal: collector().terminal, root, today: '2026-08-29', preview: true });
+  for (const scenario of cases) {
+    const root = await mkdtemp(path.join(tmpdir(), 'gala-cli-preview-contract-'));
+    context.after(() => rm(root, { recursive: true, force: true }));
+    await mkdir(path.join(root, '.gala'), { recursive: true });
+    await mkdir(path.join(root, 'content', 'posts', 'scheduled'), { recursive: true });
+    await writeFile(path.join(root, '.gala', 'managed-files.json'), JSON.stringify({
+      themePackage: {
+        name: '@rathnasgala/theme',
+        version: scenario.themeVersion,
+        availableDesignThemes: ['editorial']
+      }
+    }));
+    await writeFile(path.join(root, 'site.config.yml'), [
+      'schemaVersion: 1',
+      'framework:',
+      '  themePackage:',
+      '    name: "@rathnasgala/theme"',
+      `    version: "${scenario.themeVersion}"`,
+      'site:',
+      '  defaultLanguage: en',
+      '  timezone: UTC',
+      'hosting:',
+      '  canonicalBaseUrl: https://writer.example',
+      '  pathPrefix: /',
+      '  canonicalPolicy: self',
+      'design:',
+      '  theme: editorial'
+    ].join('\n'));
+    const post = path.join(root, 'content', 'posts', 'scheduled', 'index.en.md');
+    await writeFile(post, [
+      '---',
+      'title: Scheduled post',
+      'publishAfterDate: 2026-08-31',
+      'language: en',
+      '---',
+      '',
+      'Scheduled body.'
+    ].join('\n'));
+    const before = await readFile(post, 'utf8');
 
-  const manifest = JSON.parse(await readFile(
-    path.join(root, '.gala', 'build', 'validated-posts.json'), 'utf8'));
-  assert.equal(manifest.preview, true);
-  assert.equal(manifest.posts.length, 1);
-  assert.equal(manifest.posts[0].publicationState, 'not-emitted');
-  assert.equal(await readFile(post, 'utf8'), before);
+    await checkContent({ terminal: collector().terminal, root, today: '2026-08-29', preview: true });
+
+    const manifest = JSON.parse(await readFile(
+      path.join(root, '.gala', 'build', 'validated-posts.json'), 'utf8'));
+    assert.equal(manifest.preview, true);
+    assert.equal(manifest.posts.length, 1);
+    assert.equal(manifest.posts[0].publicationState, scenario.publicationState);
+    if (scenario.id instanceof RegExp) assert.match(manifest.posts[0].id, scenario.id);
+    else assert.equal(manifest.posts[0].id, scenario.id);
+    assert.deepEqual(manifest.assignedContentIds, []);
+    assert.equal(await readFile(post, 'utf8'), before);
+  }
 });
