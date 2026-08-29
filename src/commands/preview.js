@@ -39,6 +39,10 @@ export async function preview({
     terminal.done('Installed');
   }
 
+  terminal.step('Preparing the preview');
+  await buildReader(root, spawnProcess);
+  terminal.done('Preview is ready');
+
   const publication = await readPublication(root);
   terminal.step('Starting the preview - stop it with Ctrl-C');
   if (publication != null) terminal.note(`this is ${publication.name ?? 'your publication'} as it will look`);
@@ -63,6 +67,27 @@ export async function preview({
       } else {
         reject(new Error(`The preview build failed with exit code ${code}. Review the build output above, correct the reported problem, and run preview again.`));
       }
+    });
+  });
+}
+
+function buildReader(root, spawnProcess) {
+  return new Promise((resolve, reject) => {
+    const child = spawnProcess('npm', ['run', 'build:reader'], {
+      cwd: root, shell: false, stdio: ['ignore', 'pipe', 'pipe']
+    });
+    let said = '';
+    child.stdout?.on('data', (chunk) => { said += chunk; });
+    child.stderr?.on('data', (chunk) => { said += chunk; });
+    child.once('error', reject);
+    child.once('exit', (code) => {
+      if (code === 0) {
+        resolve();
+        return;
+      }
+      const failure = new Error('Gala could not prepare the publication styles and reader tools. The build output below contains the cause.');
+      failure.detail = said.trim();
+      reject(failure);
     });
   });
 }
