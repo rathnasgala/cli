@@ -54,7 +54,7 @@ export async function createPost({ terminal, options, cwd = process.cwd(), now =
   if (address != null) terminal.note(`will appear at ${address}`);
 
   terminal.blank();
-  terminal.note('write below the second --- line, then: gala preview');
+  terminal.note('write below the second --- line, then: npx --yes @rathnasgala/cli@latest preview');
   return { file, metadata };
 }
 

@@ -31,8 +31,9 @@ accepted and its `.git` directory is preserved. To reserve a custom domain durin
 before activating it.
 
 It signs you in to Gala and to GitHub if you are not already, creates the repository, registers the
-publication, and leaves a working checkout in the folder. When it finishes it prints the address
-your publication will live at.
+publication, and leaves a working checkout in the folder. GitHub starts the first deployment in the
+background. The command links to that deployment rather than presenting the public address as live
+before GitHub has finished.
 
 On the first run, it opens GitHub's Gala App installation page. Choose the account Gala may use,
 finish the installation, and return to the terminal; the same command resumes automatically.
@@ -43,12 +44,19 @@ unavoidable. Everything else is automatic.
 
 ## Write
 
+Every command continues to run through `npx`; `init` does not install a global `gala` executable.
+To see every command, run:
+
+```console
+npx --yes @rathnasgala/cli@latest --help
+```
+
 ```console
 npx --yes @rathnasgala/cli@latest new "The places we return to"
 ```
 
-This creates the Markdown file and tells you the address the post will appear at. Write below the
-second `---` line.
+This creates a local Markdown draft; it does not publish anything. It also tells you the address the
+post will use after a successful publication. Write below the second `---` line.
 
 ```console
 npx --yes @rathnasgala/cli@latest preview

@@ -26,7 +26,8 @@ import { customDomain } from '../domain.js';
  *   - **GitHub** turns on Pages by itself once publishing creates a `gh-pages` branch. The CLI used
  *     to poll ten minutes for a run it had caused, then call an API that changed nothing.
  *
- * What is left is genuinely the CLI's: asking what to call it, cloning, and reporting the address.
+ * What is left is genuinely the CLI's: asking what to call it, cloning, and explaining the next
+ * steps without presenting a deployment as live before GitHub has finished it.
  */
 const NAME = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const GITHUB_APP_INSTALLATION_URL = 'https://github.com/apps/gala67-app/installations/new';
@@ -87,10 +88,6 @@ export async function init({ terminal, options, cwd = process.cwd() }) {
   // writer's copy is the publication as it actually exists.
   await git.takeRemote();
 
-  terminal.done(`Created ${created.owner}/${created.name}`);
-  terminal.result(publicationUrl(registration, created));
-  terminal.note(path.relative(cwd, directory) || '.');
-
   let domainChange;
   if (checkedDomain?.host) {
     terminal.step(`Reserving ${checkedDomain.host}`);
@@ -107,9 +104,13 @@ export async function init({ terminal, options, cwd = process.cwd() }) {
     }
   }
 
-  terminal.blank();
-  terminal.note('gala new "Your first post"');
-  if (domainChange) terminal.note('gala domain check');
+  reportCreatedPublication({
+    terminal,
+    owner: created.owner,
+    name: created.name,
+    directoryLabel: path.relative(cwd, directory) || '.',
+    hasDomainChange: domainChange != null
+  });
 
   return { owner: created.owner, name: created.name, siteId: registration.siteId, root: directory };
 }
@@ -283,10 +284,37 @@ async function hasReference(directory) {
   return false;
 }
 
-function publicationUrl(registration, created) {
-  const base = registration?.canonicalBaseUrl ?? `https://${created.owner.toLowerCase()}.github.io`;
-  const prefix = registration?.pathPrefix ?? `/${created.name}`;
-  return `${base}${prefix === '/' ? '' : prefix}/`;
+export function reportCreatedPublication({
+  terminal,
+  owner,
+  name,
+  directoryLabel,
+  hasDomainChange = false
+}) {
+  const run = 'npx --yes @rathnasgala/cli@latest';
+  terminal.done(`Created ${owner}/${name}`);
+  terminal.note('The first deployment is running in GitHub Actions. The public site is not live yet.');
+  terminal.note(`track it at https://github.com/${owner}/${name}/actions`);
+
+  terminal.blank();
+  terminal.result('Next steps');
+  if (directoryLabel !== '.') terminal.note(`cd ${shellArgument(directoryLabel)}`);
+  terminal.note(`${run} new "Your first post"`);
+  terminal.note('creates a local Markdown draft; it does not publish');
+  terminal.note(`${run} preview`);
+  terminal.note('builds and serves the publication locally');
+  terminal.note(`${run} publish`);
+  terminal.note('checks and sends the work to GitHub');
+  if (hasDomainChange) {
+    terminal.note(`${run} domain check`);
+    terminal.note('checks whether the custom domain is ready');
+  }
+  terminal.note(`${run} --help`);
+  terminal.note('lists every available command');
+}
+
+function shellArgument(value) {
+  return /^[A-Za-z0-9_./-]+$/.test(value) ? value : `'${value.replaceAll("'", "'\\''")}'`;
 }
 
 function idempotencyKey(owner, name) {
