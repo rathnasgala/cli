@@ -160,14 +160,32 @@ async function createPublication({ terminal, api, capability, name, github, inst
   throw new Error(`Gala still cannot reach the repository for ${name}.`);
 }
 
-export async function publicationAccount({ terminal, api, capability }) {
-  const state = await api.githubInstallationAccounts({ capability });
-  const accounts = Array.isArray(state?.accounts) ? state.accounts : [];
+export async function publicationAccount({
+  terminal,
+  api,
+  capability,
+  pause = (milliseconds) => new Promise((resolve) => { setTimeout(resolve, milliseconds); })
+}) {
+  let state = await api.githubInstallationAccounts({ capability });
+  let accounts = Array.isArray(state?.accounts) ? state.accounts : [];
   if (accounts.length === 0) {
-    throw new Error(
-      `Install or request the Gala GitHub App at ${state?.installationUrl
-        ?? GITHUB_APP_INSTALLATION_URL} and try again.`
-    );
+    const url = state?.installationUrl ?? GITHUB_APP_INSTALLATION_URL;
+    terminal.blank();
+    terminal.step('Connect Gala to a GitHub account');
+    terminal.note('GitHub will ask which account and repositories Gala may use');
+    terminal.openUrl(url);
+    if (!await terminal.waitForEnter('Once the Gala GitHub App is installed')) {
+      throw new Error(`Install or request the Gala GitHub App at ${url}, then run this again.`);
+    }
+
+    for (let attempt = 0; attempt < 5 && accounts.length === 0; attempt += 1) {
+      if (attempt > 0) await pause(1000);
+      state = await api.githubInstallationAccounts({ capability });
+      accounts = Array.isArray(state?.accounts) ? state.accounts : [];
+    }
+    if (accounts.length === 0) {
+      throw new Error(`Gala still cannot see a GitHub App installation. Check ${url}, then run this again.`);
+    }
   }
   const personal = accounts.find((account) => account?.organization === false);
   if (personal) return personal;

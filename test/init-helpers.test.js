@@ -63,18 +63,103 @@ test('asks instead of guessing between multiple organization installations', asy
   assert.equal((await publicationAccount({ terminal, api, capability: 'proof' })).installationId, 85);
 });
 
-test('reports the exact installation route when authorization has no installation', async () => {
+test('installs the GitHub App and resumes the same init when no installation is visible yet', async () => {
+  let calls = 0;
   const api = {
     githubInstallationAccounts: async () => ({
       installationUrl: 'https://github.com/apps/gala67-app/installations/new',
-      accounts: [],
+      accounts: calls++ === 0
+        ? []
+        : [{ installationId: 42, login: 'ada', organization: false }],
     }),
   };
+  const opened = [];
+  const terminal = {
+    blank() {},
+    step() {},
+    note() {},
+    openUrl(url) { opened.push(url); },
+    waitForEnter: async () => true,
+  };
 
-  await assert.rejects(
-    publicationAccount({ terminal: {}, api, capability: 'proof' }),
-    /https:\/\/github\.com\/apps\/gala67-app\/installations\/new/,
-  );
+  assert.deepEqual(await publicationAccount({ terminal, api, capability: 'proof' }),
+    { installationId: 42, login: 'ada', organization: false });
+  assert.deepEqual(opened, ['https://github.com/apps/gala67-app/installations/new']);
+  assert.equal(calls, 2);
+});
+
+test('stops cleanly when GitHub App installation cannot be completed interactively', async () => {
+  const installationUrl = 'https://github.com/apps/gala67-app/installations/new';
+  const api = {
+    githubInstallationAccounts: async () => ({ installationUrl, accounts: [] }),
+  };
+  const terminal = {
+    blank() {},
+    step() {},
+    note() {},
+    openUrl() {},
+    waitForEnter: async () => false,
+  };
+
+  await assert.rejects(publicationAccount({ terminal, api, capability: 'proof' }),
+    new RegExp(installationUrl.replaceAll('/', '\\/')));
+});
+
+test('waits for a completed GitHub App installation to become visible', async () => {
+  let calls = 0;
+  const pauses = [];
+  const api = {
+    githubInstallationAccounts: async () => ({
+      installationUrl: 'https://github.com/apps/gala67-app/installations/new',
+      accounts: calls++ < 3
+        ? []
+        : [{ installationId: 42, login: 'ada', organization: false }],
+    }),
+  };
+  const terminal = {
+    blank() {},
+    step() {},
+    note() {},
+    openUrl() {},
+    waitForEnter: async () => true,
+  };
+
+  assert.equal((await publicationAccount({
+    terminal,
+    api,
+    capability: 'proof',
+    pause: async (milliseconds) => { pauses.push(milliseconds); },
+  })).installationId, 42);
+  assert.equal(calls, 4);
+  assert.deepEqual(pauses, [1000, 1000]);
+});
+
+test('fails after a completed installation remains unavailable through bounded retries', async () => {
+  let calls = 0;
+  const api = {
+    githubInstallationAccounts: async () => {
+      calls += 1;
+      return {
+        installationUrl: 'https://github.com/apps/gala67-app/installations/new',
+        accounts: [],
+      };
+    },
+  };
+  const terminal = {
+    blank() {},
+    step() {},
+    note() {},
+    openUrl() {},
+    waitForEnter: async () => true,
+  };
+
+  await assert.rejects(publicationAccount({
+    terminal,
+    api,
+    capability: 'proof',
+    pause: async () => {},
+  }), /still cannot see a GitHub App installation/);
+  assert.equal(calls, 6);
 });
 
 test('uses only an empty destination or an empty zero-history git repository', async () => {

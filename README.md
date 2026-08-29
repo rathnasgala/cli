@@ -34,6 +34,9 @@ It signs you in to Gala and to GitHub if you are not already, creates the reposi
 publication, and leaves a working checkout in the folder. When it finishes it prints the address
 your publication will live at.
 
+On the first run, it opens GitHub's Gala App installation page. Choose the account Gala may use,
+finish the installation, and return to the terminal; the same command resumes automatically.
+
 If the Gala GitHub App has not been given access to the new repository, it says so and links to the
 one page that grants it — GitHub has no way for an app to grant itself access, so that click is
 unavoidable. Everything else is automatic.
