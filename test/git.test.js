@@ -1,8 +1,15 @@
 import assert from 'node:assert/strict';
+import { execFile } from 'node:child_process';
 import { EventEmitter } from 'node:events';
+import { mkdtemp, readFile, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 import test from 'node:test';
+import { promisify } from 'node:util';
 
 import { cloneRepository, createGit, populateEmptyRepository } from '../src/git.js';
+
+const execute = promisify(execFile);
 
 function recorder({ exit = 0, stdout = '' } = {}) {
   const calls = [];
@@ -75,6 +82,104 @@ test('refuses a detached checkout instead of guessing a branch', async () => {
 test('refuses an unusable commit id rather than reporting it', async () => {
   const { spawnProcess } = recorder({ stdout: 'not-a-sha\n' });
   await assert.rejects(createGit({ root: '/site', spawnProcess }).head(), /unusable commit id/);
+});
+
+test('refuses unresolved conflicts before fetching or rebasing and names every file', async () => {
+  const calls = [];
+  const responses = [
+    { exit: 0, stdout: 'content/posts/example/index.en.md\0site.config.yml\0' },
+  ];
+  const spawnProcess = (command, args, options) => {
+    calls.push({ command, args, options });
+    const child = new EventEmitter();
+    child.stdout = new EventEmitter();
+    child.stderr = new EventEmitter();
+    queueMicrotask(() => {
+      const response = responses.shift();
+      if (response.stdout) child.stdout.emit('data', response.stdout);
+      child.emit('exit', response.exit, null);
+    });
+    return child;
+  };
+
+  await assert.rejects(
+    createGit({ root: '/site', spawnProcess }).takeRemote(),
+    (failure) => {
+      assert.equal(failure.message,
+        'Git has unresolved conflicts. Gala left them untouched. Run git status, resolve or abort '
+        + 'the operation it reports, then publish again.');
+      assert.equal(failure.detail,
+        'Conflicted files:\ncontent/posts/example/index.en.md\nsite.config.yml');
+      return true;
+    }
+  );
+
+  assert.deepEqual(calls.map(({ args }) => args.slice(2)), [
+    ['diff', '--name-only', '--diff-filter=U', '-z'],
+  ]);
+  assert.ok(!calls.some(({ args }) => args.includes('fetch')));
+  assert.ok(!calls.some(({ args }) => args.includes('rebase')));
+});
+
+test('leaves a real conflicted worktree and its unmerged index byte-for-byte untouched', async () => {
+  const root = await mkdtemp(path.join(tmpdir(), 'gala-conflicted-publication-'));
+  const git = (...args) => execute('git', ['-C', root, ...args]);
+  const article = path.join(root, 'index.en.md');
+
+  await git('init', '--initial-branch=main');
+  await git('config', 'user.name', 'Gala test');
+  await git('config', 'user.email', 'test@gala.invalid');
+  await writeFile(article, 'base\n');
+  await git('add', 'index.en.md');
+  await git('commit', '-m', 'base');
+  await git('checkout', '-b', 'remote-change');
+  await writeFile(article, 'remote\n');
+  await git('commit', '-am', 'remote');
+  await git('checkout', 'main');
+  await writeFile(article, 'local\n');
+  await git('commit', '-am', 'local');
+  await assert.rejects(git('merge', 'remote-change'));
+
+  const beforeBody = await readFile(article);
+  const beforeIndex = (await git('ls-files', '--unmerged')).stdout;
+
+  await assert.rejects(createGit({ root }).takeRemote(), /Git has unresolved conflicts/);
+
+  assert.deepEqual(await readFile(article), beforeBody);
+  assert.equal((await git('ls-files', '--unmerged')).stdout, beforeIndex);
+  assert.match(beforeBody.toString(), /<<<<<<< HEAD/);
+});
+
+test('a clean checkout still fetches and rebases its named branch', async () => {
+  const calls = [];
+  const responses = [
+    { exit: 0, stdout: '' },
+    { exit: 0, stdout: 'main\n' },
+    { exit: 0, stdout: '' },
+    { exit: 0, stdout: '' },
+    { exit: 0, stdout: `${'a'.repeat(40)}\n` },
+  ];
+  const spawnProcess = (command, args, options) => {
+    calls.push({ command, args, options });
+    const child = new EventEmitter();
+    child.stdout = new EventEmitter();
+    child.stderr = new EventEmitter();
+    queueMicrotask(() => {
+      const response = responses.shift();
+      if (response.stdout) child.stdout.emit('data', response.stdout);
+      child.emit('exit', response.exit, null);
+    });
+    return child;
+  };
+
+  assert.equal(await createGit({ root: '/site', spawnProcess }).takeRemote(), 'a'.repeat(40));
+  assert.deepEqual(calls.map(({ args }) => args.slice(2)), [
+    ['diff', '--name-only', '--diff-filter=U', '-z'],
+    ['rev-parse', '--abbrev-ref', 'HEAD'],
+    ['fetch', 'origin', 'main'],
+    ['rebase', '--autostash', 'origin/main'],
+    ['rev-parse', 'HEAD'],
+  ]);
 });
 
 test('populates an empty git repository without replacing its metadata directory', async () => {

@@ -105,6 +105,14 @@ export function createGit({ root, token, spawnProcess = spawn } = {}) {
      * makes the post-publish validation pass the sole local writer of any missing content ID.
      */
     async takeRemote() {
+      const unmerged = await run(['diff', '--name-only', '--diff-filter=U', '-z'], { capture: true });
+      const conflictedPaths = unmerged.split('\0').filter(Boolean);
+      if (conflictedPaths.length > 0) {
+        const failure = new Error('Git has unresolved conflicts. Gala left them untouched. Run git '
+          + 'status, resolve or abort the operation it reports, then publish again.');
+        failure.detail = `Conflicted files:\n${conflictedPaths.join('\n')}`;
+        throw failure;
+      }
       const branch = await git.branch();
       await run(['fetch', 'origin', branch]);
       await run(['rebase', '--autostash', `origin/${branch}`]);
