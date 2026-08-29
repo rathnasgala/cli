@@ -4,6 +4,7 @@ import path from 'node:path';
 import { galaApi } from '../api/gala.js';
 import { galaCredential } from '../auth/gala.js';
 import { githubCredential } from '../auth/github.js';
+import { cliCommand } from '../cli/invocation.js';
 import { createGit } from '../git.js';
 
 /**
@@ -23,7 +24,7 @@ export async function doctor({ terminal, options, cwd = process.cwd() }) {
     const accepted = await galaApi({ baseUrl: gala.apiBaseUrl, token: gala.accessToken }).accepted();
     return accepted
       ? ok(`valid until ${new Date(gala.expiresAt).toLocaleString()}`)
-      : wrong('the API no longer accepts it', 'gala auth');
+      : wrong('the API no longer accepts it', cliCommand('auth'));
   }));
 
   checks.push(await checkCredential('GitHub sign-in', async () => {
@@ -45,7 +46,7 @@ export async function doctor({ terminal, options, cwd = process.cwd() }) {
     const source = await readFile(workflow, 'utf8');
     const siteId = /site-id:\s*([0-9A-Z]{26})/.exec(source)?.[1];
     return siteId == null
-      ? wrong('no site id — this publication may not be registered', 'gala init')
+      ? wrong('no site id — this publication may not be registered', cliCommand('init'))
       : ok(siteId);
   }, 'the workflow is missing; registration writes it'));
 
@@ -53,8 +54,8 @@ export async function doctor({ terminal, options, cwd = process.cwd() }) {
     const git = createGit({ root });
     const dirty = await git.run(['status', '--porcelain'], { capture: true });
     const ahead = await git.run(['rev-list', '--count', '@{upstream}..HEAD'], { capture: true, allow: [0, 128] });
-    if (dirty !== '') return wrong(`${dirty.split('\n').length} file(s) not recorded`, 'gala publish');
-    if (ahead !== '' && ahead !== '0') return wrong(`${ahead} commit(s) not sent`, 'gala publish');
+    if (dirty !== '') return wrong(`${dirty.split('\n').length} file(s) not recorded`, cliCommand('publish'));
+    if (ahead !== '' && ahead !== '0') return wrong(`${ahead} commit(s) not sent`, cliCommand('publish'));
     return ok('everything is on GitHub');
   }, 'this folder is not a git checkout'));
 

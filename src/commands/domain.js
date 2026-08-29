@@ -3,6 +3,7 @@ import path from 'node:path';
 import { galaApi } from '../api/gala.js';
 import { galaCredential } from '../auth/gala.js';
 import { UsageError } from '../cli/args.js';
+import { cliCommand } from '../cli/invocation.js';
 import { customDomain } from '../domain.js';
 import { readPublication } from '../publication.js';
 
@@ -16,7 +17,7 @@ export async function domain({ terminal, options, cwd = process.cwd() }) {
   }
   const [action = 'status', value, ...extra] = options.positional;
   if (extra.length > 0 || !['status', 'set', 'check', 'cancel', 'remove'].includes(action)) {
-    throw new UsageError('Use: gala domain [status|set <hostname>|check|cancel|remove]');
+    throw new UsageError(`Use: ${cliCommand('domain [status|set <hostname>|check|cancel|remove]')}`);
   }
   if (action === 'set' && value == null) throw new UsageError('domain set needs a hostname');
   if (action !== 'set' && value != null) throw new UsageError(`domain ${action} takes no hostname`);
@@ -45,7 +46,7 @@ export async function domain({ terminal, options, cwd = process.cwd() }) {
       pathPrefix: '/',
     });
     terminal.done(`Reserved ${checked.host}`);
-    terminal.note('Verify it in the repository owner’s GitHub account, then run: gala domain check');
+    terminal.note(`Verify it in the repository owner’s GitHub account, then run: ${cliCommand('domain check')}`);
     terminal.openUrl('https://docs.github.com/en/pages/configuring-a-custom-domain-for-your-github-pages-site/verifying-your-custom-domain-for-github-pages');
     return change;
   }
@@ -83,7 +84,7 @@ export async function domain({ terminal, options, cwd = process.cwd() }) {
       const configured = await api.configureTopologyChange(publication.siteId, pending.changeId);
       terminal.done(`GitHub verified ${configured.cname}`);
       terminal.note(dnsInstruction(configured.cname, await providerHost(api, publication.siteId)));
-      terminal.note('After DNS propagates, run: gala domain check');
+      terminal.note(`After DNS propagates, run: ${cliCommand('domain check')}`);
       return configured;
     }
     const committed = await api.commitTopologyChange(publication.siteId, pending.changeId);
@@ -119,6 +120,6 @@ function dnsInstruction(host, target) {
 function showPending(terminal, pending) {
   terminal.result(`${pending.canonicalBaseUrl}${pending.pathPrefix}`);
   terminal.note(`State: ${pending.state}`);
-  if (pending.state === 'PREPARED') terminal.note('Next: verify ownership, then run gala domain check.');
-  else terminal.note('Next: configure DNS, then run gala domain check.');
+  if (pending.state === 'PREPARED') terminal.note(`Next: verify ownership, then run ${cliCommand('domain check')}.`);
+  else terminal.note(`Next: configure DNS, then run ${cliCommand('domain check')}.`);
 }

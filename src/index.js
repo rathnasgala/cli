@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { UsageError, parseArguments } from './cli/args.js';
+import { CLI_INVOCATION, cliCommand } from './cli/invocation.js';
 import { createTerminal } from './cli/terminal.js';
 import { COMMANDS } from './commands-manifest.js';
 
@@ -20,7 +21,7 @@ if (command == null) {
 }
 
 if (argv.includes('--help') || argv.includes('-h')) {
-  process.stdout.write(`\n  ${command.usage ?? `gala ${name}`}\n  ${command.summary}\n\n`);
+  process.stdout.write(`\n  ${command.usage ?? cliCommand(name)}\n  ${command.summary}\n\n`);
   process.exit(0);
 }
 
@@ -56,5 +57,6 @@ function usage() {
   const lines = Object.entries(COMMANDS)
     .map(([key, { summary }]) => `    ${key.padEnd(9)} ${summary}`)
     .join('\n');
-  process.stdout.write(`\n  gala <command>\n\n${lines}\n\n    Run any command with --help.\n\n`);
+  process.stdout.write(`\n  ${CLI_INVOCATION} <command>\n\n${lines}\n\n`
+    + `    Run ${CLI_INVOCATION} <command> --help for details.\n\n`);
 }

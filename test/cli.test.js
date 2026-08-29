@@ -9,6 +9,7 @@ import test from 'node:test';
 
 const run = promisify(execFile);
 const entry = fileURLToPath(new URL('../src/index.js', import.meta.url));
+const invocation = 'npx --yes @rathnasgala/cli@latest';
 
 const invoke = (args, options = {}) => run(process.execPath, [entry, ...args], {
   env: { ...process.env, NO_COLOR: '1' }, ...options
@@ -40,7 +41,7 @@ test('an unknown command names it and shows what does exist', async () => {
   const failure = await invoke(['scaffold']);
   assert.equal(failure.code, 1);
   assert.match(failure.stderr, /there is no scaffold command/);
-  assert.match(failure.stdout, /gala <command>/);
+  assert.match(failure.stdout, /npx --yes @rathnasgala\/cli@latest <command>/);
 });
 
 test('a mistyped option fails before anything happens', async () => {
@@ -54,7 +55,8 @@ test('every command explains itself', async () => {
   for (const command of ['auth', 'init', 'domain', 'new', 'preview', 'publish', 'upgrade', 'doctor']) {
     const { stdout, code } = await invoke([command, '--help']);
     assert.equal(code, 0, command);
-    assert.match(stdout, /gala /, command);
+    assert.match(stdout, new RegExp(`${invocation.replaceAll('/', '\\/')} ${command}`), command);
+    assert.doesNotMatch(stdout, /^\s*gala\s/m, command);
   }
 });
 

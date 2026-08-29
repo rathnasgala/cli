@@ -7,6 +7,7 @@ import { preview } from './commands/preview.js';
 import { publish } from './commands/publish.js';
 import { prism } from './commands/prism.js';
 import { upgrade } from './commands/upgrade.js';
+import { cliCommand } from './cli/invocation.js';
 
 /**
  * Commands in the order a writer meets them.
@@ -31,19 +32,19 @@ export const COMMANDS = {
   },
   init: {
     summary: 'Create a publication in an empty directory',
-    usage: 'gala init [directory] [--name my-notes] [--domain blog.example.com]',
+    usage: cliCommand('init [directory] [--name my-notes] [--domain blog.example.com]'),
     flags: ['name', 'domain', 'api-base-url'],
     run: init
   },
   domain: {
     summary: 'Inspect or change this publication’s custom domain',
-    usage: 'gala domain [status|set <hostname>|check|cancel|remove] [--root path]',
+    usage: cliCommand('domain [status|set <hostname>|check|cancel|remove] [--root path]'),
     flags: ['root', 'api-base-url'],
     run: domain
   },
   new: {
     summary: 'Start a post',
-    usage: 'gala new "A durable idea" [--language en]',
+    usage: cliCommand('new "A durable idea" [--language en]'),
     flags: ['root', 'language', 'today'],
     run: createPost
   },
@@ -60,14 +61,14 @@ export const COMMANDS = {
   },
   prism: {
     summary: 'Manage author-approved Prism configurations',
-    usage: 'gala prism <status|mode|link-policy|list|create|edit|generate|submit|approve|reject|revoke> [arguments]',
+    usage: cliCommand('prism <status|mode|link-policy|list|create|edit|generate|submit|approve|reject|revoke> [arguments]'),
     flags: ['root', 'api-base-url', 'language', 'depth', 'intent', 'modality', 'file', 'reason'],
     switches: ['yes'],
     run: prism
   },
   upgrade: {
     summary: 'Inspect and apply a verified managed-theme update',
-    usage: 'gala upgrade [--channel latest|next] [--yes]',
+    usage: cliCommand('upgrade [--channel latest|next] [--yes]'),
     flags: ['root', 'channel'],
     switches: ['yes'],
     run: upgrade

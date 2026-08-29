@@ -11,6 +11,7 @@ import {
 import { stringify } from 'yaml';
 
 import { UsageError } from '../cli/args.js';
+import { cliCommand } from '../cli/invocation.js';
 import { postUrl, readPublication } from '../publication.js';
 
 /**
@@ -54,7 +55,7 @@ export async function createPost({ terminal, options, cwd = process.cwd(), now =
   if (address != null) terminal.note(`will appear at ${address}`);
 
   terminal.blank();
-  terminal.note('write below the second --- line, then: npx --yes @rathnasgala/cli@latest preview');
+  terminal.note(`write below the second --- line, then: ${cliCommand('preview')}`);
   return { file, metadata };
 }
 

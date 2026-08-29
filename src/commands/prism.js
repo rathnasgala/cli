@@ -4,6 +4,7 @@ import path from 'node:path';
 import { galaApi } from '../api/gala.js';
 import { galaCredential } from '../auth/gala.js';
 import { UsageError } from '../cli/args.js';
+import { cliCommand } from '../cli/invocation.js';
 import { createGit } from '../git.js';
 import { readPublication } from '../publication.js';
 
@@ -25,7 +26,7 @@ export async function prism({ terminal, options, cwd = process.cwd() }) {
   const [action = 'status', ...args] = options.positional;
 
   if (action === 'status') {
-    requireArgs(args, 0, 'gala prism status');
+    requireArgs(args, 0, cliCommand('prism status'));
     const state = await api.json(`/v1/sites/${publication.siteId}/prism`, { action: 'Prism status' });
     terminal.result(`Prism ${state.publishedMode}`);
     terminal.note(`Mode: requested ${state.requestedMode}; published ${state.publishedMode}`);
@@ -39,7 +40,7 @@ export async function prism({ terminal, options, cwd = process.cwd() }) {
   const expectedRepositoryHeadSha = inventory.headSha;
 
   if (action === 'mode') {
-    requireArgs(args, 1, 'gala prism mode <off|presentation-only|manual|assisted>');
+    requireArgs(args, 1, cliCommand('prism mode <off|presentation-only|manual|assisted>'));
     const mode = MODES.get(args[0]);
     if (!mode) throw new UsageError('Prism mode must be off, presentation-only, manual, or assisted.');
     if (mode === 'OFF' || mode === 'PRESENTATION_ONLY') await confirm(terminal, options, `Change Prism mode to ${args[0]}?`);
@@ -52,7 +53,7 @@ export async function prism({ terminal, options, cwd = process.cwd() }) {
   if (action === 'link-policy') {
     const [scope, target, value] = args;
     if (scope === 'site') {
-      requireArgs(args, 2, 'gala prism link-policy site <nofollow|follow>');
+      requireArgs(args, 2, cliCommand('prism link-policy site <nofollow|follow>'));
       const policy = policyValue(target);
       const result = await mutate(api, `/v1/sites/${publication.siteId}/prism`, 'PUT', {
         configurationLinkPolicy: policy, expectedRepositoryHeadSha,
@@ -60,7 +61,7 @@ export async function prism({ terminal, options, cwd = process.cwd() }) {
       return settleMutation(api, terminal, publication, result);
     }
     if (scope === 'work') {
-      requireArgs(args, 3, 'gala prism link-policy work <slug> <inherit|nofollow|follow>');
+      requireArgs(args, 3, cliCommand('prism link-policy work <slug> <inherit|nofollow|follow>'));
       const post = resolvePost(inventory, target, options.value('language'), publication.defaultLanguage);
       if (value === 'inherit') {
         const result = await mutate(api,
@@ -76,11 +77,14 @@ export async function prism({ terminal, options, cwd = process.cwd() }) {
         }, 'Prism work link policy');
       return settleMutation(api, terminal, publication, result);
     }
-    throw new UsageError('Use: gala prism link-policy site <nofollow|follow> or work <slug> <inherit|nofollow|follow>');
+    throw new UsageError(
+      `Use: ${cliCommand('prism link-policy site <nofollow|follow>')} or `
+        + cliCommand('prism link-policy work <slug> <inherit|nofollow|follow>')
+    );
   }
 
   if (action === 'list') {
-    requireArgs(args, 1, 'gala prism list <slug> [--language en]');
+    requireArgs(args, 1, cliCommand('prism list <slug> [--language en]'));
     const post = resolvePost(inventory, args[0], options.value('language'), publication.defaultLanguage);
     const result = await configurations(api, publication.siteId, post);
     terminal.result(`${result.configurations.length} configuration${result.configurations.length === 1 ? '' : 's'}`);
@@ -91,7 +95,7 @@ export async function prism({ terminal, options, cwd = process.cwd() }) {
   }
 
   if (action === 'create') {
-    requireArgs(args, 1, 'gala prism create <slug> --language en --depth brief --intent orientation');
+    requireArgs(args, 1, cliCommand('prism create <slug> --language en --depth brief --intent orientation'));
     const post = resolvePost(inventory, args[0], options.value('language'), publication.defaultLanguage);
     const current = await configurations(api, publication.siteId, post);
     const result = await mutate(api,
@@ -108,7 +112,7 @@ export async function prism({ terminal, options, cwd = process.cwd() }) {
   }
 
   if (!['edit', 'generate', 'submit', 'approve', 'reject', 'revoke'].includes(action)) {
-    throw new UsageError('Unknown Prism action. Run gala prism --help.');
+    throw new UsageError(`Unknown Prism action. Run ${cliCommand('prism --help')}.`);
   }
 
   const configurationId = args[0];
@@ -119,7 +123,7 @@ export async function prism({ terminal, options, cwd = process.cwd() }) {
   const base = `/v1/sites/${publication.siteId}/articles/${post.articleId}/configurations/${configurationId}`;
 
   if (action === 'edit') {
-    requireArgs(args, 1, 'gala prism edit <configuration-id> --file proposal.md');
+    requireArgs(args, 1, cliCommand('prism edit <configuration-id> --file proposal.md'));
     const filename = options.value('file');
     if (!filename) throw new UsageError('Prism edit needs --file proposal.md.');
     const markdown = await readFile(path.resolve(root, filename), 'utf8');
@@ -132,7 +136,7 @@ export async function prism({ terminal, options, cwd = process.cwd() }) {
   }
 
   if (action === 'generate') {
-    requireArgs(args, 1, 'gala prism generate <configuration-id>');
+    requireArgs(args, 1, cliCommand('prism generate <configuration-id>'));
     const result = await mutate(api, `${base}/generation-jobs`, 'POST', {
       expectedSourceContentHash: collection.sourceRevisionHash,
       hashContract: collection.hashContract,
@@ -146,7 +150,7 @@ export async function prism({ terminal, options, cwd = process.cwd() }) {
     throw new UsageError(`${action} needs a revision ID when there is no working revision.`);
   }
   if (action === 'submit') {
-    if (args.length > 2) throw new UsageError('Use: gala prism submit <configuration-id> [revision-id]');
+    if (args.length > 2) throw new UsageError(`Use: ${cliCommand('prism submit <configuration-id> [revision-id]')}`);
     if (revisionId !== configuration.workingRevision?.revisionId) {
       throw new UsageError('Only the current working revision can be submitted. Refresh the configuration and try again.');
     }
@@ -165,7 +169,7 @@ export async function prism({ terminal, options, cwd = process.cwd() }) {
 
   const reason = options.value('reason');
   if (action === 'approve') {
-    if (args.length > 2) throw new UsageError('Use: gala prism approve <configuration-id> [revision-id] [--yes]');
+    if (args.length > 2) throw new UsageError(`Use: ${cliCommand('prism approve <configuration-id> [revision-id] [--yes]')}`);
     if (revisionId !== configuration.workingRevision?.revisionId) {
       throw new UsageError('Only the current working revision can be approved. Refresh the configuration and try again.');
     }
@@ -292,7 +296,7 @@ async function settleMutation(api, terminal, publication, result) {
     throw new UsageError(`Repository update failed (${state.errorCode ?? 'unknown error'}). Run the command again after correcting the cause.`);
   }
   if (state.status !== 'COMMITTED') {
-    throw new UsageError('Repository update did not finish before the 31-minute tracking deadline. Check gala prism status before retrying.');
+    throw new UsageError(`Repository update did not finish before the 31-minute tracking deadline. Check ${cliCommand('prism status')} before retrying.`);
   }
   if (!state.publicationAttemptSha) {
     terminal.result('Repository updated. No publication attempt was returned.');

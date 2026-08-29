@@ -4,6 +4,8 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { x as extractTar } from 'tar';
 
+import { cliCommand } from '../cli/invocation.js';
+
 const PACKAGE = '@rathnasgala/theme';
 const REGISTRY = 'https://registry.npmjs.org';
 const PROTECTED = ['.git/', 'content/', 'custom.css', 'site.config.yml'];
@@ -81,7 +83,7 @@ async function assertNoManagedDrift(root, installed) {
   for (const [managed, expected] of Object.entries(installed.files)) {
     const file = path.join(root, managed);
     if (!await exists(file) || (await lstat(file)).isSymbolicLink() || sha256(await readFile(file)) !== expected) {
-      throw new Error(`${managed} has local changes; restore it with gala doctor before upgrading`);
+      throw new Error(`${managed} has local changes; restore it with ${cliCommand('doctor')} before upgrading`);
     }
   }
 }
@@ -168,6 +170,6 @@ export async function upgrade({ terminal, options, cwd = process.cwd(), fetchImp
     await rm(unpacked.temporary, { recursive: true, force: true });
   }
   terminal.done(`Upgraded managed theme to ${release.version}`);
-  terminal.note('Run gala preview, then gala publish when the result is approved.');
+  terminal.note(`Run ${cliCommand('preview')}, then ${cliCommand('publish')} when the result is approved.`);
   return { changed: true, version: release.version };
 }

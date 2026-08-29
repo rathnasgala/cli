@@ -7,6 +7,7 @@ import { galaCredential } from '../auth/gala.js';
 import { githubCredential } from '../auth/github.js';
 import { cloneRepository, createGit, populateEmptyRepository } from '../git.js';
 import { UsageError } from '../cli/args.js';
+import { CLI_INVOCATION, shellArgument } from '../cli/invocation.js';
 import { customDomain } from '../domain.js';
 
 /**
@@ -291,7 +292,7 @@ export function reportCreatedPublication({
   directoryLabel,
   hasDomainChange = false
 }) {
-  const run = 'npx --yes @rathnasgala/cli@latest';
+  const run = CLI_INVOCATION;
   terminal.done(`Created ${owner}/${name}`);
   terminal.note('The first deployment is running in GitHub Actions. The public site is not live yet.');
   terminal.note(`track it at https://github.com/${owner}/${name}/actions`);
@@ -311,10 +312,6 @@ export function reportCreatedPublication({
   }
   terminal.note(`${run} --help`);
   terminal.note('lists every available command');
-}
-
-function shellArgument(value) {
-  return /^[A-Za-z0-9_./-]+$/.test(value) ? value : `'${value.replaceAll("'", "'\\''")}'`;
 }
 
 function idempotencyKey(owner, name) {
