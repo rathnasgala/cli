@@ -1,6 +1,7 @@
 import path from 'node:path';
 
 import { galaApi } from '../api/gala.js';
+import { HttpError } from '../api/http.js';
 import { accountForCommand } from '../auth/checkout-profile.js';
 import { authenticatedProfile } from '../auth/profiles.js';
 import { UsageError } from '../cli/args.js';
@@ -24,7 +25,8 @@ export async function domain({ terminal, options, cwd = process.cwd() }) {
   if (action !== 'set' && value != null) throw new UsageError(`domain ${action} takes no hostname`);
 
   const account = await accountForCommand(options, root, { terminal });
-  const credential = (await authenticatedProfile({ name: account, terminal })).gala;
+  const profile = await authenticatedProfile({ name: account, terminal });
+  const credential = profile.gala;
   const api = galaApi({ baseUrl: credential.apiBaseUrl, token: credential.accessToken });
 
   if (action === 'status') {
@@ -41,13 +43,14 @@ export async function domain({ terminal, options, cwd = process.cwd() }) {
   if (action === 'set') {
     const checked = customDomain(value);
     if (checked.error) throw new UsageError(checked.error);
+    const site = await ownedSite(api, publication.siteId);
+    const owner = site.repository.split('/')[0];
     const change = await api.prepareTopologyChange(publication.siteId, {
       canonicalBaseUrl: `https://${checked.host}`,
       pathPrefix: '/',
     });
     terminal.done(`Reserved ${checked.host}`);
-    terminal.note(`Verify it in the repository owner’s GitHub account, then run: ${cliCommand('domain check')}`);
-    terminal.openUrl('https://docs.github.com/en/pages/configuring-a-custom-domain-for-your-github-pages-site/verifying-your-custom-domain-for-github-pages');
+    showVerificationSteps(terminal, checked.host, owner, profile.metadata.githubLogin);
     return change;
   }
 
@@ -81,7 +84,17 @@ export async function domain({ terminal, options, cwd = process.cwd() }) {
 
   if (action === 'check') {
     if (pending.cname && pending.state === 'PREPARED') {
-      const configured = await api.configureTopologyChange(publication.siteId, pending.changeId);
+      let configured;
+      try {
+        configured = await api.configureTopologyChange(publication.siteId, pending.changeId);
+      } catch (failure) {
+        if (!(failure instanceof HttpError)
+            || failure.code !== 'GITHUB_PAGES_DOMAIN_VERIFICATION_REQUIRED') throw failure;
+        const site = await ownedSite(api, publication.siteId);
+        const owner = site.repository.split('/')[0];
+        showVerificationSteps(terminal, pending.cname, owner, profile.metadata.githubLogin);
+        throw new Error(`GitHub has not verified ${pending.cname} for @${owner} yet. Complete the steps above, then retry.`);
+      }
       terminal.done(`GitHub verified ${configured.cname}`);
       terminal.note(dnsInstruction(configured.cname, await providerHost(api, publication.siteId)));
       terminal.note(`After DNS propagates, run: ${cliCommand('domain check')}`);
@@ -98,6 +111,16 @@ export async function domain({ terminal, options, cwd = process.cwd() }) {
   }
 
   throw new UsageError(`Unsupported domain action: ${action}`);
+}
+
+function showVerificationSteps(terminal, host, owner, login) {
+  terminal.note(`GitHub owner @${owner} must verify ${host} once under Settings → Pages → Verified domains.`);
+  terminal.openUrl(owner.toLowerCase() === login.toLowerCase()
+    ? 'https://github.com/settings/pages'
+    : `https://github.com/organizations/${encodeURIComponent(owner)}/settings/pages`);
+  terminal.note(`Choose “Add a domain”, enter ${host}, and add GitHub’s TXT record at your DNS provider.`);
+  terminal.note(`The TXT record name will be _github-pages-challenge-${owner}.${host}; GitHub supplies its value.`);
+  terminal.note(`When GitHub shows “Verified”, run: ${cliCommand('domain check')}`);
 }
 
 async function ownedSite(api, siteId) {

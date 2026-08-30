@@ -21,6 +21,7 @@ test('domain reads server state and advances configure before commit', { timeout
   await writeFile(path.join(root, 'site.config.yml'), `site:\n  id: ${siteId}\nhosting:\n  canonicalBaseUrl: https://writer.github.io\n  pathPrefix: /notes\n`);
 
   let pending = null;
+  let verificationRequired = false;
   const calls = [];
   const server = createServer((request, response) => {
     calls.push(`${request.method} ${request.url}`);
@@ -40,7 +41,30 @@ test('domain reads server state and advances configure before commit', { timeout
       return;
     }
     if (request.method === 'POST'
+        && request.url === `/v1/sites/${siteId}/topology-changes/prepare`) {
+      pending = {
+        changeId,
+        state: 'PREPARED',
+        canonicalBaseUrl: 'https://blog.example.com',
+        pathPrefix: '/',
+        cname: 'blog.example.com',
+        configuredAt: null,
+        expiresAt: new Date(Date.now() + 60_000).toISOString(),
+        committedAt: null,
+      };
+      response.end(JSON.stringify(pending));
+      return;
+    }
+    if (request.method === 'POST'
         && request.url === `/v1/sites/${siteId}/topology-changes/${changeId}/configure`) {
+      if (verificationRequired) {
+        response.statusCode = 409;
+        response.end(JSON.stringify({
+          code: 'GITHUB_PAGES_DOMAIN_VERIFICATION_REQUIRED',
+          message: 'Verify this domain in the repository owner\'s GitHub account, then try again',
+        }));
+        return;
+      }
       pending = { ...pending, state: 'PAGES_CONFIGURED' };
       response.end(JSON.stringify(pending));
       return;
@@ -73,16 +97,20 @@ test('domain reads server state and advances configure before commit', { timeout
   assert.match(status.stdout, /https:\/\/blog\.example\.com/);
   assert.doesNotMatch(status.stdout, /writer\.github\.io\/notes/);
 
-  pending = {
-    changeId,
-    state: 'PREPARED',
-    canonicalBaseUrl: 'https://blog.example.com',
-    pathPrefix: '/',
-    cname: 'blog.example.com',
-    configuredAt: null,
-    expiresAt: new Date(Date.now() + 60_000).toISOString(),
-    committedAt: null,
-  };
+  const reserved = await invoke(['domain', 'set', 'blog.example.com']);
+  assert.match(reserved.stdout, /GitHub owner @writer must verify blog\.example\.com once/);
+  assert.match(reserved.stdout, /github\.com\/organizations\/writer\/settings\/pages/);
+  assert.match(reserved.stdout, /_github-pages-challenge-writer\.blog\.example\.com/);
+  assert.match(reserved.stdout, /domain check/);
+
+  verificationRequired = true;
+  await assert.rejects(invoke(['domain', 'check']), (failure) => {
+    assert.match(failure.stdout, /Settings → Pages → Verified domains/);
+    assert.match(failure.stdout, /GitHub supplies its value/);
+    assert.match(failure.stderr, /GitHub has not verified blog\.example\.com for @writer yet/);
+    return true;
+  });
+  verificationRequired = false;
   const configured = await invoke(['domain', 'check']);
   assert.match(configured.stdout, /GitHub verified blog\.example\.com/);
   assert.equal(pending.state, 'PAGES_CONFIGURED');
@@ -91,6 +119,7 @@ test('domain reads server state and advances configure before commit', { timeout
   assert.match(committed.stdout, /blog\.example\.com is live with enforced HTTPS/);
   assert.equal(pending, null);
   assert.deepEqual(calls.filter((call) => call.includes(`/topology-changes/${changeId}/`)), [
+    `POST /v1/sites/${siteId}/topology-changes/${changeId}/configure`,
     `POST /v1/sites/${siteId}/topology-changes/${changeId}/configure`,
     `POST /v1/sites/${siteId}/topology-changes/${changeId}/commit`,
   ]);
