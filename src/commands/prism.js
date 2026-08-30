@@ -22,7 +22,7 @@ export async function prism({ terminal, options, cwd = process.cwd() }) {
   if (!publication || !ULID.test(publication.siteId ?? '')) {
     throw new UsageError('Run this inside a registered Gala publication, or pass --root.');
   }
-  const account = await accountForCommand(options, root);
+  const account = await accountForCommand(options, root, { terminal });
   const credential = (await selectedProfile({ name: account })).gala;
   const api = galaApi({ baseUrl: credential.apiBaseUrl, token: credential.accessToken });
   const [action = 'status', ...args] = options.positional;

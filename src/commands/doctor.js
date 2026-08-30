@@ -21,7 +21,7 @@ export async function doctor({ terminal, options, cwd = process.cwd() }) {
 
   let selected;
   checks.push(await checkCredential('Account profile', async () => {
-    const account = await accountForCommand(options, root);
+    const account = await accountForCommand(options, root, { terminal });
     selected = await selectedProfile({ name: account });
     return ok(`${account}: Gala ${selected.metadata.gala.email} + GitHub @${selected.metadata.githubLogin}`);
   }));

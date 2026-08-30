@@ -26,7 +26,7 @@ export async function publish({ terminal, options, cwd = process.cwd(), regenera
   const root = path.resolve(options.value('root') ?? cwd);
   const today = options.value('today');
 
-  const account = await accountForCommand(options, root);
+  const account = await accountForCommand(options, root, { terminal });
   const github = (await selectedProfile({ name: account })).github;
   const git = createGit({ root, token: github.accessToken });
 

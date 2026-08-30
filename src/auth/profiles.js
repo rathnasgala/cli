@@ -145,7 +145,9 @@ async function readProfile(name, { root }) {
   }
   const [gala, github] = await Promise.all([readCredential(paths.gala), readCredential(paths.github)]);
   if (gala == null || github == null) {
-    throw new UsageError(`Account profile ${name} has expired; remove it and add it again.`);
+    throw new UsageError(
+      `Account profile ${name} has expired; run \`npx --yes @rathnasgala/cli@latest auth add\` to sign in again.`
+    );
   }
   return { metadata, gala, github };
 }

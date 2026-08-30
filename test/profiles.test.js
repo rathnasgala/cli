@@ -259,7 +259,13 @@ test('an explicit command profile cannot override a different checkout binding',
   const root = await scratch();
   await mkdir(path.join(root, '.git'));
   await bindCheckoutProfile(root, 'forum');
-  await assert.rejects(accountForCommand(options('rfai'), root), /belongs to account profile forum/);
+  const profilesRoot = await scratch();
+  await seed(profilesRoot, 'forum');
+  await seed(profilesRoot, 'rfai');
+  await assert.rejects(
+    accountForCommand(options('rfai'), root, { profilesRoot }),
+    /belongs to account profile forum/
+  );
   assert.equal(await checkoutProfile(root), 'forum');
 });
 
@@ -267,16 +273,80 @@ test('an explicit command profile may repeat the checkout binding or select an u
   const bound = await scratch();
   await mkdir(path.join(bound, '.git'));
   await bindCheckoutProfile(bound, 'forum');
-  assert.equal(await accountForCommand(options('forum'), bound), 'forum');
+  const profilesRoot = await scratch();
+  await seed(profilesRoot, 'forum');
+  await seed(profilesRoot, 'rfai');
+  assert.equal(await accountForCommand(options('forum'), bound, { profilesRoot }), 'forum');
   const unbound = await scratch();
   await mkdir(path.join(unbound, '.git'));
-  assert.equal(await accountForCommand(options('rfai'), unbound), 'rfai');
+  assert.equal(await accountForCommand(options('rfai'), unbound, { profilesRoot }), 'rfai');
+  assert.equal(await checkoutProfile(unbound), 'rfai');
 });
 
-test('an unbound checkout requires an explicit account instead of guessing from mutable active state', async () => {
+test('an unbound checkout with one profile selects and remembers it', async () => {
   const checkout = await scratch();
   await mkdir(path.join(checkout, '.git'));
-  await assert.rejects(accountForCommand(options(undefined), checkout), /no account profile binding/);
+  const profilesRoot = await scratch();
+  await seed(profilesRoot, 'only');
+  assert.equal(await accountForCommand(options(undefined), checkout, { profilesRoot }), 'only');
+  assert.equal(await checkoutProfile(checkout), 'only');
+});
+
+test('an unbound checkout selects the profile matching its configured repository owner', async () => {
+  const checkout = await scratch();
+  await mkdir(path.join(checkout, '.git'));
+  await writeFile(path.join(checkout, 'site.config.yml'), 'site:\n  repository: owner/publication\nhosting:\n  canonicalBaseUrl: https://owner.github.io\n');
+  const profilesRoot = await scratch();
+  await seed(profilesRoot, 'other');
+  await seed(profilesRoot, 'owner');
+  assert.equal(await accountForCommand(options(undefined), checkout, { profilesRoot }), 'owner');
+  assert.equal(await checkoutProfile(checkout), 'owner');
+});
+
+test('an ambiguous checkout asks with identifiable choices and remembers the answer', async () => {
+  const checkout = await scratch();
+  await mkdir(path.join(checkout, '.git'));
+  const profilesRoot = await scratch();
+  await seed(profilesRoot, 'one', { email: 'one@gala.test' });
+  await seed(profilesRoot, 'two', { email: 'two@gala.test' });
+  let question;
+  const terminal = {
+    interactive: true,
+    ask: async (value) => { question = value; return 'two@gala.test'; },
+    note() {},
+  };
+  assert.equal(await accountForCommand(options(undefined), checkout, { terminal, profilesRoot }), 'two');
+  assert.match(question, /one \(GitHub @one, Gala one@gala\.test\)/);
+  assert.match(question, /two \(GitHub @two, Gala two@gala\.test\)/);
+  assert.equal(await checkoutProfile(checkout), 'two');
+});
+
+test('account accepts a GitHub handle or Gala email and rejects only unknown choices', async () => {
+  const profilesRoot = await scratch();
+  await seed(profilesRoot, 'owner', { email: 'writer@gala.test', githubLogin: 'Owner' });
+  for (const selector of ['@Owner', 'writer@gala.test']) {
+    const checkout = await scratch();
+    await mkdir(path.join(checkout, '.git'));
+    assert.equal(await accountForCommand(options(selector), checkout, { profilesRoot }), 'owner');
+  }
+  const checkout = await scratch();
+  await mkdir(path.join(checkout, '.git'));
+  await assert.rejects(
+    accountForCommand(options('missing'), checkout, { profilesRoot }),
+    /not configured; use one of: owner/
+  );
+});
+
+test('a noninteractive ambiguous checkout names the valid account choices', async () => {
+  const checkout = await scratch();
+  await mkdir(path.join(checkout, '.git'));
+  const profilesRoot = await scratch();
+  await seed(profilesRoot, 'one');
+  await seed(profilesRoot, 'two');
+  await assert.rejects(
+    accountForCommand(options(undefined), checkout, { profilesRoot }),
+    /more than one account profile.*one.*two/
+  );
 });
 
 test('binding refuses nonstandard or missing Git metadata rather than writing into the publication', async () => {

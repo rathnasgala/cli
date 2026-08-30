@@ -23,7 +23,7 @@ export async function domain({ terminal, options, cwd = process.cwd() }) {
   if (action === 'set' && value == null) throw new UsageError('domain set needs a hostname');
   if (action !== 'set' && value != null) throw new UsageError(`domain ${action} takes no hostname`);
 
-  const account = await accountForCommand(options, root);
+  const account = await accountForCommand(options, root, { terminal });
   const credential = (await selectedProfile({ name: account })).gala;
   const api = galaApi({ baseUrl: credential.apiBaseUrl, token: credential.accessToken });
 
