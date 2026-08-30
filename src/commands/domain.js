@@ -139,9 +139,12 @@ function handleDomainFailure(failure, terminal, pending, site, login) {
   const address = pending.cname ?? 'the GitHub Pages address';
   switch (failure.code) {
     case 'GITHUB_PAGES_DOMAIN_VERIFICATION_REQUIRED':
-      showVerificationSteps(terminal, pending.cname, owner, login);
-      throw new Error(`GitHub still reports ${pending.cname} as unverified for @${owner}. If GitHub already shows “Verified”, wait for Pages to update, then run: ${retry}`);
+      terminal.openUrl(repositoryPagesUrl(owner, repository));
+      terminal.note('GitHub’s Custom domain panel shows the current verification, DNS, and HTTPS status.');
+      throw new Error(`GitHub Pages has not accepted ${pending.cname} yet. Follow its Custom domain status, then run: ${retry}`);
     case 'GITHUB_PAGES_DOMAIN_PROPAGATION_PENDING':
+      terminal.openUrl(repositoryPagesUrl(owner, repository));
+      terminal.note('GitHub’s Custom domain panel shows the current verification, DNS, and HTTPS status.');
       throw new Error(`GitHub accepted ${address} and is still updating Pages. Wait briefly, then run: ${retry}`);
     case 'GITHUB_PAGES_DNS_PENDING':
       terminal.note(dnsInstruction(pending.cname, `${owner.toLowerCase()}.github.io`));
@@ -155,7 +158,7 @@ function handleDomainFailure(failure, terminal, pending, site, login) {
         : `https://github.com/organizations/${encodeURIComponent(owner)}/settings/installations`);
       throw new Error(`The Gala GitHub App needs Pages and Administration access to ${owner}/${repository}. Grant it, then run: ${retry}`);
     case 'GITHUB_PAGES_DOMAIN_REJECTED':
-      terminal.openUrl(`https://github.com/${encodeURIComponent(owner)}/${encodeURIComponent(repository)}/settings/pages`);
+      terminal.openUrl(repositoryPagesUrl(owner, repository));
       throw new Error(`GitHub rejected ${address}. Review the repository’s Pages settings, then run: ${retry}`);
     case 'GITHUB_PAGES_TOPOLOGY_NOT_READY':
       throw new Error(`GitHub Pages has not finished applying ${address}. Wait briefly, then run: ${retry}`);
@@ -166,6 +169,10 @@ function handleDomainFailure(failure, terminal, pending, site, login) {
     default:
       throw failure;
   }
+}
+
+function repositoryPagesUrl(owner, repository) {
+  return `https://github.com/${encodeURIComponent(owner)}/${encodeURIComponent(repository)}/settings/pages`;
 }
 
 function showVerificationSteps(terminal, host, owner, login) {

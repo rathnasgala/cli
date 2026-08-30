@@ -114,9 +114,10 @@ test('domain reads server state and advances configure before commit', { timeout
 
   configureFailure = { code: 'GITHUB_PAGES_DOMAIN_VERIFICATION_REQUIRED', remaining: 5 };
   await assert.rejects(invoke(['domain', 'check']), (failure) => {
-    assert.match(failure.stdout, /Settings → Pages → Verified domains/);
-    assert.match(failure.stdout, /GitHub supplies its value/);
-    assert.match(failure.stderr, /GitHub still reports blog\.example\.com as unverified for @writer/);
+    assert.match(failure.stdout, /github\.com\/writer\/notes\/settings\/pages/);
+    assert.match(failure.stdout, /Custom domain panel shows the current verification, DNS, and HTTPS status/);
+    assert.doesNotMatch(failure.stdout, /Add a domain/);
+    assert.match(failure.stderr, /GitHub Pages has not accepted blog\.example\.com yet/);
     return true;
   });
   configureFailure = { code: 'GITHUB_PAGES_DOMAIN_PROPAGATION_PENDING', remaining: 2 };
