@@ -170,21 +170,25 @@ function handleDomainFailure(failure, terminal, pending, site, login) {
     case 'GITHUB_PAGES_DOMAIN_VERIFICATION_REQUIRED':
       terminal.note(`GitHub Pages already holds ${pending.cname}; publishing remains safe while ownership verification is pending.`);
       showVerificationSteps(terminal, pending.cname, owner, login);
+      showPendingFeatureActivation(terminal, pending, retry);
       return pending;
     case 'GITHUB_PAGES_DOMAIN_PROPAGATION_PENDING':
       terminal.openUrl(repositoryPagesUrl(owner, repository));
       terminal.note(`GitHub accepted ${address} and is still updating its Pages state.`);
       terminal.note(`No action is required. Publishing remains safe; retry with: ${retry}`);
+      showPendingFeatureActivation(terminal, pending, retry);
       return pending;
     case 'GITHUB_PAGES_DNS_PENDING':
       terminal.note(dnsInstruction(pending.cname, `${owner.toLowerCase()}.github.io`));
       terminal.openUrl(repositoryPagesUrl(owner, repository));
       terminal.note(`After saving the DNS records, propagation can take up to 24 hours. Retry with: ${retry}`);
+      showPendingFeatureActivation(terminal, pending, retry);
       return pending;
     case 'GITHUB_PAGES_CERTIFICATE_PENDING':
       terminal.openUrl(repositoryPagesUrl(owner, repository));
       terminal.note(`DNS is accepted. GitHub is provisioning the HTTPS certificate for ${pending.cname}.`);
       terminal.note(`No action is normally required. If it remains pending, check conflicting DNS and CAA records. Retry with: ${retry}`);
+      showPendingFeatureActivation(terminal, pending, retry);
       return pending;
     case 'GITHUB_PAGES_DNS_INVALID':
       terminal.note(dnsInstruction(pending.cname, `${owner.toLowerCase()}.github.io`));
@@ -201,9 +205,11 @@ function handleDomainFailure(failure, terminal, pending, site, login) {
       terminal.openUrl(repositoryPagesUrl(owner, repository));
       terminal.note(`GitHub Pages is finishing HTTPS and the final address for ${address}.`);
       terminal.note(`No action is required. Retry with: ${retry}`);
+      showPendingFeatureActivation(terminal, pending, retry);
       return pending;
     case 'GITHUB_PAGES_VERIFICATION_UNAVAILABLE':
       terminal.note(`GitHub Pages is temporarily unavailable. The pending change is preserved; retry later with: ${retry}`);
+      showPendingFeatureActivation(terminal, pending, retry);
       return pending;
     case 'SITE_TOPOLOGY_STATE_CONFLICT':
       throw new Error(`This domain change is no longer in the expected state. Inspect it with: ${cliCommand('domain status')}`);
@@ -248,7 +254,14 @@ function showPending(terminal, pending) {
   } else {
     terminal.note('GitHub accepted the domain; DNS, certificate, or HTTPS activation is pending.');
   }
-  terminal.note(`Continue with: ${cliCommand('domain check')}`);
+  const retry = cliCommand('domain check');
+  terminal.note(`Continue with: ${retry}`);
+  showPendingFeatureActivation(terminal, pending, retry);
+}
+
+function showPendingFeatureActivation(terminal, pending, retry) {
+  if (!pending.cname) return;
+  terminal.note(`Until ${retry} reports the domain is live, reader sign-in, comments, reactions, and view tracking are unavailable at https://${pending.cname}/.`);
 }
 
 function sameAddress(left, right) {

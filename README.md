@@ -115,7 +115,9 @@ npx --yes @rathnasgala/cli@latest domain check
 `domain check` resumes the same workflow and advances every automatic step. `domain status` reports
 where an interrupted change is waiting, `domain cancel` restores the committed address, and
 `domain remove` returns the publication to its GitHub Pages address. After removal, delete the old
-DNS records.
+DNS records. While a custom-domain change is pending, the page may become reachable before Gala can
+authorize that origin. Reader sign-in, comments, reactions, and view tracking activate only after
+`domain check` reports that the custom domain is live with enforced HTTPS.
 
 ## When something is wrong
 

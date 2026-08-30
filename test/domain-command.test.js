@@ -126,6 +126,8 @@ test('domain reads server state and advances configure before commit', { timeout
   assert.match(reserved.stdout, /github\.com\/organizations\/writer\/settings\/pages/);
   assert.match(reserved.stdout, /_github-pages-challenge-writer\.blog\.example\.com/);
   assert.match(reserved.stdout, /domain check/);
+  assert.match(reserved.stdout,
+    /reader sign-in, comments, reactions, and view tracking are unavailable/);
 
   await assert.rejects(invoke(['domain', 'set', 'other.example.com']), (failure) => {
     assert.match(failure.stderr, /A change to https:\/\/blog\.example\.com\/ is already pending/);
@@ -143,7 +145,13 @@ test('domain reads server state and advances configure before commit', { timeout
   assert.match(configured.stdout, /GitHub verified and accepted blog\.example\.com/);
   assert.match(configured.stdout, /DNS action required/);
   assert.match(configured.stdout, /CNAME blog\.example\.com → writer\.github\.io/);
+  assert.match(configured.stdout,
+    /Until .*domain check.* reports the domain is live, reader sign-in, comments, reactions, and view tracking are unavailable/);
   assert.equal(pending.state, 'PAGES_CONFIGURED');
+
+  const pendingStatus = await invoke(['domain', 'status']);
+  assert.match(pendingStatus.stdout, /DNS, certificate, or HTTPS activation is pending/);
+  assert.match(pendingStatus.stdout, /reader sign-in, comments, reactions, and view tracking are unavailable/);
 
   const dnsPending = await invoke(['domain', 'check']);
   assert.match(dnsPending.stdout, /CNAME blog\.example\.com → writer\.github\.io/);
@@ -173,6 +181,8 @@ test('domain reads server state and advances configure before commit', { timeout
     commitFailure = code;
     const waiting = await invoke(['domain', 'check']);
     assert.match(waiting.stdout, outputPattern);
+    assert.match(waiting.stdout,
+      /reader sign-in, comments, reactions, and view tracking are unavailable/);
   }
   commitFailure = null;
   const committed = await invoke(['domain', 'check']);
