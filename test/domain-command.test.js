@@ -21,7 +21,8 @@ test('domain reads server state and advances configure before commit', { timeout
   await writeFile(path.join(root, 'site.config.yml'), `site:\n  id: ${siteId}\nhosting:\n  canonicalBaseUrl: https://writer.github.io\n  pathPrefix: /notes\n`);
 
   let pending = null;
-  let verificationRequired = false;
+  let configureFailure = null;
+  let commitFailure = null;
   const calls = [];
   const server = createServer((request, response) => {
     calls.push(`${request.method} ${request.url}`);
@@ -57,11 +58,14 @@ test('domain reads server state and advances configure before commit', { timeout
     }
     if (request.method === 'POST'
         && request.url === `/v1/sites/${siteId}/topology-changes/${changeId}/configure`) {
-      if (verificationRequired) {
+      if (configureFailure) {
+        const code = configureFailure.code;
+        configureFailure.remaining -= 1;
+        if (configureFailure.remaining === 0) configureFailure = null;
         response.statusCode = 409;
         response.end(JSON.stringify({
-          code: 'GITHUB_PAGES_DOMAIN_VERIFICATION_REQUIRED',
-          message: 'Verify this domain in the repository owner\'s GitHub account, then try again',
+          code,
+          message: 'GitHub Pages has not finished this step',
         }));
         return;
       }
@@ -71,6 +75,11 @@ test('domain reads server state and advances configure before commit', { timeout
     }
     if (request.method === 'POST'
         && request.url === `/v1/sites/${siteId}/topology-changes/${changeId}/commit`) {
+      if (commitFailure) {
+        response.statusCode = 409;
+        response.end(JSON.stringify({ code: commitFailure, message: 'GitHub DNS is pending' }));
+        return;
+      }
       response.end(JSON.stringify({ ...pending, state: 'COMMITTED' }));
       pending = null;
       return;
@@ -103,24 +112,48 @@ test('domain reads server state and advances configure before commit', { timeout
   assert.match(reserved.stdout, /_github-pages-challenge-writer\.blog\.example\.com/);
   assert.match(reserved.stdout, /domain check/);
 
-  verificationRequired = true;
+  configureFailure = { code: 'GITHUB_PAGES_DOMAIN_VERIFICATION_REQUIRED', remaining: 5 };
   await assert.rejects(invoke(['domain', 'check']), (failure) => {
     assert.match(failure.stdout, /Settings → Pages → Verified domains/);
     assert.match(failure.stdout, /GitHub supplies its value/);
-    assert.match(failure.stderr, /GitHub has not verified blog\.example\.com for @writer yet/);
+    assert.match(failure.stderr, /GitHub still reports blog\.example\.com as unverified for @writer/);
     return true;
   });
-  verificationRequired = false;
+  configureFailure = { code: 'GITHUB_PAGES_DOMAIN_PROPAGATION_PENDING', remaining: 2 };
   const configured = await invoke(['domain', 'check']);
+  assert.match(configured.stdout, /Waiting for GitHub Pages to finish applying the domain/);
   assert.match(configured.stdout, /GitHub verified blog\.example\.com/);
   assert.equal(pending.state, 'PAGES_CONFIGURED');
 
+  commitFailure = 'GITHUB_PAGES_DNS_PENDING';
+  await assert.rejects(invoke(['domain', 'check']), (failure) => {
+    assert.match(failure.stdout, /CNAME blog\.example\.com → writer\.github\.io/);
+    assert.match(failure.stderr, /still checking DNS/);
+    return true;
+  });
+  const commitFailures = [
+    ['GITHUB_PAGES_DNS_INVALID', /Correct them, then run: .*domain check/,
+      /CNAME blog\.example\.com → writer\.github\.io/],
+    ['GITHUB_PAGES_PERMISSION_REQUIRED', /needs Pages and Administration access to writer\/notes/,
+      /github\.com\/organizations\/writer\/settings\/installations/],
+    ['GITHUB_PAGES_DOMAIN_REJECTED', /GitHub rejected blog\.example\.com/,
+      /github\.com\/writer\/notes\/settings\/pages/],
+    ['GITHUB_PAGES_TOPOLOGY_NOT_READY', /has not finished applying blog\.example\.com/],
+    ['GITHUB_PAGES_VERIFICATION_UNAVAILABLE', /pending change is preserved/],
+    ['SITE_TOPOLOGY_STATE_CONFLICT', /Inspect it with: .*domain status/],
+  ];
+  for (const [code, errorPattern, outputPattern] of commitFailures) {
+    commitFailure = code;
+    await assert.rejects(invoke(['domain', 'check']), (failure) => {
+      assert.match(failure.stderr, errorPattern);
+      if (outputPattern) assert.match(failure.stdout, outputPattern);
+      return true;
+    });
+  }
+  commitFailure = null;
   const committed = await invoke(['domain', 'check']);
   assert.match(committed.stdout, /blog\.example\.com is live with enforced HTTPS/);
   assert.equal(pending, null);
-  assert.deepEqual(calls.filter((call) => call.includes(`/topology-changes/${changeId}/`)), [
-    `POST /v1/sites/${siteId}/topology-changes/${changeId}/configure`,
-    `POST /v1/sites/${siteId}/topology-changes/${changeId}/configure`,
-    `POST /v1/sites/${siteId}/topology-changes/${changeId}/commit`,
-  ]);
+  assert.equal(calls.filter((call) => call.endsWith('/configure')).length, 8);
+  assert.equal(calls.filter((call) => call.endsWith('/commit')).length, 8);
 });

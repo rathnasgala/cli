@@ -83,24 +83,25 @@ export async function domain({ terminal, options, cwd = process.cwd() }) {
   }
 
   if (action === 'check') {
+    const site = await ownedSite(api, publication.siteId);
     if (pending.cname && pending.state === 'PREPARED') {
       let configured;
       try {
-        configured = await api.configureTopologyChange(publication.siteId, pending.changeId);
+        configured = await configureWithRetry(api, publication.siteId, pending.changeId, terminal);
       } catch (failure) {
-        if (!(failure instanceof HttpError)
-            || failure.code !== 'GITHUB_PAGES_DOMAIN_VERIFICATION_REQUIRED') throw failure;
-        const site = await ownedSite(api, publication.siteId);
-        const owner = site.repository.split('/')[0];
-        showVerificationSteps(terminal, pending.cname, owner, profile.metadata.githubLogin);
-        throw new Error(`GitHub has not verified ${pending.cname} for @${owner} yet. Complete the steps above, then retry.`);
+        handleDomainFailure(failure, terminal, pending, site, profile.metadata.githubLogin);
       }
       terminal.done(`GitHub verified ${configured.cname}`);
       terminal.note(dnsInstruction(configured.cname, await providerHost(api, publication.siteId)));
       terminal.note(`After DNS propagates, run: ${cliCommand('domain check')}`);
       return configured;
     }
-    const committed = await api.commitTopologyChange(publication.siteId, pending.changeId);
+    let committed;
+    try {
+      committed = await api.commitTopologyChange(publication.siteId, pending.changeId);
+    } catch (failure) {
+      handleDomainFailure(failure, terminal, pending, site, profile.metadata.githubLogin);
+    }
     terminal.done(committed.cname
       ? `${committed.cname} is live with enforced HTTPS`
       : 'The GitHub Pages address is live again');
@@ -111,6 +112,60 @@ export async function domain({ terminal, options, cwd = process.cwd() }) {
   }
 
   throw new UsageError(`Unsupported domain action: ${action}`);
+}
+
+async function configureWithRetry(api, siteId, changeId, terminal) {
+  const attempts = 5;
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      return await api.configureTopologyChange(siteId, changeId);
+    } catch (failure) {
+      const waiting = failure instanceof HttpError && [
+        'GITHUB_PAGES_DOMAIN_VERIFICATION_REQUIRED',
+        'GITHUB_PAGES_DOMAIN_PROPAGATION_PENDING',
+      ].includes(failure.code);
+      if (!waiting || attempt === attempts) throw failure;
+      if (attempt === 1) terminal.step('Waiting for GitHub Pages to finish applying the domain');
+      await new Promise((resolve) => setTimeout(resolve, 500));
+    }
+  }
+  throw new Error('GitHub Pages domain check ended unexpectedly');
+}
+
+function handleDomainFailure(failure, terminal, pending, site, login) {
+  if (!(failure instanceof HttpError)) throw failure;
+  const [owner, repository] = site.repository.split('/');
+  const retry = cliCommand('domain check');
+  const address = pending.cname ?? 'the GitHub Pages address';
+  switch (failure.code) {
+    case 'GITHUB_PAGES_DOMAIN_VERIFICATION_REQUIRED':
+      showVerificationSteps(terminal, pending.cname, owner, login);
+      throw new Error(`GitHub still reports ${pending.cname} as unverified for @${owner}. If GitHub already shows “Verified”, wait for Pages to update, then run: ${retry}`);
+    case 'GITHUB_PAGES_DOMAIN_PROPAGATION_PENDING':
+      throw new Error(`GitHub accepted ${address} and is still updating Pages. Wait briefly, then run: ${retry}`);
+    case 'GITHUB_PAGES_DNS_PENDING':
+      terminal.note(dnsInstruction(pending.cname, `${owner.toLowerCase()}.github.io`));
+      throw new Error(`GitHub is still checking DNS for ${pending.cname}. After it propagates, run: ${retry}`);
+    case 'GITHUB_PAGES_DNS_INVALID':
+      terminal.note(dnsInstruction(pending.cname, `${owner.toLowerCase()}.github.io`));
+      throw new Error(`GitHub rejected the DNS records for ${pending.cname}. Correct them, then run: ${retry}`);
+    case 'GITHUB_PAGES_PERMISSION_REQUIRED':
+      terminal.openUrl(owner.toLowerCase() === login.toLowerCase()
+        ? 'https://github.com/settings/installations'
+        : `https://github.com/organizations/${encodeURIComponent(owner)}/settings/installations`);
+      throw new Error(`The Gala GitHub App needs Pages and Administration access to ${owner}/${repository}. Grant it, then run: ${retry}`);
+    case 'GITHUB_PAGES_DOMAIN_REJECTED':
+      terminal.openUrl(`https://github.com/${encodeURIComponent(owner)}/${encodeURIComponent(repository)}/settings/pages`);
+      throw new Error(`GitHub rejected ${address}. Review the repository’s Pages settings, then run: ${retry}`);
+    case 'GITHUB_PAGES_TOPOLOGY_NOT_READY':
+      throw new Error(`GitHub Pages has not finished applying ${address}. Wait briefly, then run: ${retry}`);
+    case 'GITHUB_PAGES_VERIFICATION_UNAVAILABLE':
+      throw new Error(`GitHub Pages is temporarily unavailable. Your pending change is preserved; run later: ${retry}`);
+    case 'SITE_TOPOLOGY_STATE_CONFLICT':
+      throw new Error(`This domain change is no longer in the expected state. Inspect it with: ${cliCommand('domain status')}`);
+    default:
+      throw failure;
+  }
 }
 
 function showVerificationSteps(terminal, host, owner, login) {
