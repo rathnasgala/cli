@@ -64,7 +64,7 @@ test('domain reads server state and advances configure before commit', { timeout
     apiBaseUrl,
     expiresAt: new Date(Date.now() + 300_000).toISOString(),
   });
-  const invoke = (args) => run(process.execPath, [entry, ...args], {
+  const invoke = (args) => run(process.execPath, [entry, ...args, '--account', 'test'], {
     cwd: root,
     env: environment,
   });

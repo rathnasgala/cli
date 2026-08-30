@@ -31,6 +31,10 @@ export function credentialPath(name, { platform = process.platform, environment 
   return path.join(environment.XDG_CONFIG_HOME || path.join(home, '.config'), 'gala', `${name}.json`);
 }
 
+export function credentialDirectory(options = {}) {
+  return path.dirname(credentialPath('credentials', options));
+}
+
 export async function writeCredential(target, record) {
   const directory = path.dirname(path.resolve(target));
   await mkdir(directory, { recursive: true, mode: 0o700 });

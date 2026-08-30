@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { HttpError, request } from '../src/api/http.js';
+import { galaApi } from '../src/api/gala.js';
 
 const original = globalThis.fetch;
 function answering(status, body, headers = { 'content-type': 'application/json' }) {
@@ -61,4 +62,32 @@ test('an unreachable host names the host rather than leaking a socket error', as
   globalThis.fetch = async () => { throw new TypeError('fetch failed'); };
   await assert.rejects(request('https://api.gala67.com/v1/x', { action: 'Sign-in' }),
     /Sign-in could not reach api\.gala67\.com/);
+});
+
+test('Gala account lookup returns the immutable identity behind the bearer token', async () => {
+  let authorization;
+  globalThis.fetch = async (url, options) => {
+    assert.equal(url, 'https://api.gala67.test/v1/me');
+    authorization = options.headers.authorization;
+    return new Response(JSON.stringify({
+      userId: '01M00000000000000000000001',
+      email: 'writer@example.com',
+      displayName: 'Writer',
+      role: 'AUTHOR',
+    }), { status: 200, headers: { 'content-type': 'application/json' } });
+  };
+  assert.deepEqual(await galaApi({ baseUrl: 'https://api.gala67.test', token: 'gala-token' }).profile(), {
+    userId: '01M00000000000000000000001',
+    email: 'writer@example.com',
+    displayName: 'Writer',
+  });
+  assert.equal(authorization, 'Bearer gala-token');
+});
+
+test('Gala account lookup rejects malformed identity responses before profile storage', async () => {
+  answering(200, JSON.stringify({ email: 'writer@example.com', displayName: 'Writer' }));
+  await assert.rejects(
+    galaApi({ baseUrl: 'https://api.gala67.test', token: 'gala-token' }).profile(),
+    /unusable account identity/
+  );
 });

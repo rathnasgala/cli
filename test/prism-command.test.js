@@ -167,7 +167,7 @@ test('Prism status and create use committed server state and an idempotency key'
     accessToken: 'test-token', apiBaseUrl,
     expiresAt: new Date(Date.now() + 300_000).toISOString(),
   });
-  const invoke = (args) => run(process.execPath, [entry, ...args], {
+  const invoke = (args) => run(process.execPath, [entry, ...args, '--account', 'test'], {
     cwd: root, env: environment,
   });
   await run('git', ['init'], { cwd: root });

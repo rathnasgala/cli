@@ -3,8 +3,8 @@ import path from 'node:path';
 
 import { galaApi } from '../api/gala.js';
 import { githubApi } from '../api/github.js';
-import { galaCredential } from '../auth/gala.js';
-import { githubCredential } from '../auth/github.js';
+import { accountForCommand, bindCheckoutProfile } from '../auth/checkout-profile.js';
+import { selectedProfile } from '../auth/profiles.js';
 import { cloneRepository, createGit, populateEmptyRepository } from '../git.js';
 import { UsageError } from '../cli/args.js';
 import { CLI_INVOCATION, shellArgument } from '../cli/invocation.js';
@@ -45,8 +45,10 @@ export async function init({ terminal, options, cwd = process.cwd() }) {
 
   const destination = await inspectDestination(directory);
 
-  const gala = await galaCredential({ terminal, apiBaseUrl: options.value('api-base-url') });
-  const github = await githubCredential({ terminal });
+  const profile = await selectedProfile({ name: options.value('account') });
+  const { gala, github, metadata } = profile;
+  const account = metadata.name;
+  terminal.step(`Account ${account}: Gala ${metadata.gala.email} + GitHub @${metadata.githubLogin}`);
 
   const name = await publicationName({ terminal, explicitName, directory });
 
@@ -71,6 +73,7 @@ export async function init({ terminal, options, cwd = process.cwd() }) {
   if (destination === 'empty-git') await populateEmptyRepository(checkout);
   else await cloneRepository(checkout);
 
+  await bindCheckoutProfile(directory, account);
   terminal.step('Registering the publication');
   const git = createGit({ root: directory, token: github.accessToken });
   const registration = await api.registerSite({

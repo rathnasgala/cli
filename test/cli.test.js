@@ -60,6 +60,21 @@ test('every command explains itself', async () => {
   }
 });
 
+test('help exposes account selection for every authenticated command', async () => {
+  for (const command of ['init', 'domain', 'publish', 'prism', 'doctor']) {
+    const { stdout, code } = await invoke([command, '--help']);
+    assert.equal(code, 0, command);
+    assert.match(stdout, /--account github-login/, command);
+  }
+});
+
+test('auth help exposes profile management and its API endpoint option', async () => {
+  const { stdout, code } = await invoke(['auth', '--help']);
+  assert.equal(code, 0);
+  assert.match(stdout, /list\|add\|use <github-login>\|remove <github-login>/);
+  assert.match(stdout, /--api-base-url URL/);
+});
+
 test('a failure is one line the writer can act on, with the stack behind GALA_DEBUG', async () => {
   /*
    * A rejected top-level await prints a stack through node_modules by default, which buries the

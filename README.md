@@ -12,6 +12,16 @@ Nothing to install. Every command runs through `npx`.
 
 ## Start a publication
 
+Sign in once. The CLI binds the verified Gala and GitHub identities together, names the account
+profile after the GitHub username, and makes it active.
+
+```console
+npx --yes @rathnasgala/cli@latest auth add
+```
+
+Use `auth list` to inspect every pair, `auth use <github-login>` to change the active account, and
+`auth remove <github-login>` to forget one. Tokens from different profiles are never combined.
+
 Create it in the current empty folder:
 
 ```console
@@ -30,7 +40,7 @@ accepted and its `.git` directory is preserved. To reserve a custom domain durin
 `--domain blog.example.com`; Gala still requires GitHub ownership verification and healthy DNS
 before activating it.
 
-It signs you in to Gala and to GitHub if you are not already, creates the repository, registers the
+It uses the selected profile, creates the repository, registers the
 publication, and leaves a working checkout in the folder. GitHub starts the first deployment in the
 background. The command links to that deployment rather than presenting the public address as live
 before GitHub has finished.
@@ -126,18 +136,20 @@ Run any command with `--help`.
 
 | Command | What it does | Options |
 | --- | --- | --- |
-| `init` | Create a publication in the current or named empty directory | `--name`, `--domain` |
-| `domain` | Inspect or change the custom domain | `--root` |
+| `init` | Create a publication in the current or named empty directory | `--name`, `--domain`, `--account` |
+| `domain` | Inspect or change the custom domain | `--root`, `--account` |
 | `new` | Start a post | `--language`, `--root`, `--today` |
 | `preview` | Build and serve the publication locally | `--root`, `--today` |
-| `publish` | Check, record and send your work to GitHub | `--root`, `--today`, `--skip-checks` |
-| `prism` | Manage author-approved reading configurations | `--root`, `--language`, `--depth`, `--intent`, `--modality`, `--file`, `--reason`, `--yes` |
+| `publish` | Check, record and send your work to GitHub | `--root`, `--today`, `--account`, `--skip-checks` |
+| `prism` | Manage author-approved reading configurations | `--root`, `--account`, `--language`, `--depth`, `--intent`, `--modality`, `--file`, `--reason`, `--yes` |
 | `upgrade` | Inspect and apply a verified managed-theme update | `--root`, `--channel`, `--yes` |
-| `doctor` | Check a publication and say what is wrong | `--root` |
-| `auth` | Sign in to Gala and GitHub | - |
+| `doctor` | Check a publication and say what is wrong | `--root`, `--account` |
+| `auth` | Add, list, select or remove GitHub-named account profiles | `--api-base-url` |
 
-`auth` is never a prerequisite you have to remember: any command that needs a credential obtains
-one. It exists for when you want to do it deliberately - a new machine, or a different account.
+`init` shows both identities and uses the active account automatically. Registration stores that
+profile binding inside the checkout's private `.git` metadata. Later authenticated commands use the
+binding even if another profile becomes active. `--account` remains available for an explicit CI or
+unbound-checkout selection, but it can never override a different bound owner.
 
 Every command prompts for what it needs when run in a terminal, and every prompt has an option that
 supplies it instead. With no terminal attached - in CI - nothing is ever prompted for: a value that
@@ -164,7 +176,7 @@ configured - so publishing works on a machine where those differ, or where none 
 Sign in again:
 
 ```console
-npx --yes @rathnasgala/cli@latest auth
+npx --yes @rathnasgala/cli@latest auth add
 ```
 
 ### Gala cannot reach the repository

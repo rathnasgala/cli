@@ -38,6 +38,15 @@ export function galaApi({ baseUrl = DEFAULT_API_BASE_URL, token } = {}) {
       }
     },
 
+    async profile() {
+      const body = await requestJson(`${root}/v1/me`, authorized('Gala account lookup'));
+      if (typeof body?.userId !== 'string' || typeof body?.email !== 'string'
+          || typeof body?.displayName !== 'string') {
+        throw new TypeError('Gala returned an unusable account identity');
+      }
+      return { userId: body.userId, email: body.email, displayName: body.displayName };
+    },
+
     /** Exchanges the GitHub token for the short-lived capability the GitHub-scoped routes require. */
     async githubCapability(githubToken) {
       const body = await requestJson(`${root}/v1/auth/github/device-authorizations`,

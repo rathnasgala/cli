@@ -26,20 +26,21 @@ import { cliCommand } from './cli/invocation.js';
  */
 export const COMMANDS = {
   auth: {
-    summary: 'Sign in to Gala and GitHub',
+    summary: 'Add, inspect, select or remove account profiles',
+    usage: cliCommand('auth [list|add|use <github-login>|remove <github-login>] [--api-base-url URL]'),
     flags: ['api-base-url'],
     run: auth
   },
   init: {
     summary: 'Create a publication in an empty directory',
-    usage: cliCommand('init [directory] [--name my-notes] [--domain blog.example.com]'),
-    flags: ['name', 'domain', 'api-base-url'],
+    usage: cliCommand('init [directory] [--name my-notes] [--domain blog.example.com] [--account github-login]'),
+    flags: ['name', 'domain', 'account'],
     run: init
   },
   domain: {
     summary: 'Inspect or change this publication’s custom domain',
-    usage: cliCommand('domain [status|set <hostname>|check|cancel|remove] [--root path]'),
-    flags: ['root', 'api-base-url'],
+    usage: cliCommand('domain [status|set <hostname>|check|cancel|remove] [--root path] [--account github-login]'),
+    flags: ['root', 'account'],
     run: domain
   },
   new: {
@@ -55,14 +56,15 @@ export const COMMANDS = {
   },
   publish: {
     summary: 'Check, record and send your work to GitHub',
-    flags: ['root', 'today'],
+    usage: cliCommand('publish [--root path] [--today YYYY-MM-DD] [--account github-login] [--skip-checks]'),
+    flags: ['root', 'today', 'account'],
     switches: ['skip-checks'],
     run: publish
   },
   prism: {
     summary: 'Manage author-approved Prism configurations',
-    usage: cliCommand('prism <status|mode|link-policy|list|create|edit|generate|submit|approve|reject|revoke> [arguments]'),
-    flags: ['root', 'api-base-url', 'language', 'depth', 'intent', 'modality', 'file', 'reason'],
+    usage: cliCommand('prism <status|mode|link-policy|list|create|edit|generate|submit|approve|reject|revoke> [arguments] [--account github-login]'),
+    flags: ['root', 'account', 'language', 'depth', 'intent', 'modality', 'file', 'reason'],
     switches: ['yes'],
     run: prism
   },
@@ -75,7 +77,8 @@ export const COMMANDS = {
   },
   doctor: {
     summary: 'Check a publication and say what is wrong',
-    flags: ['root', 'api-base-url'],
+    usage: cliCommand('doctor [--root path] [--account github-login]'),
+    flags: ['root', 'account'],
     run: doctor
   }
 };

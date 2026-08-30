@@ -2,8 +2,8 @@ import { readFile, readdir, stat } from 'node:fs/promises';
 import path from 'node:path';
 
 import { galaApi } from '../api/gala.js';
-import { galaCredential } from '../auth/gala.js';
-import { githubCredential } from '../auth/github.js';
+import { accountForCommand } from '../auth/checkout-profile.js';
+import { selectedProfile } from '../auth/profiles.js';
 import { cliCommand } from '../cli/invocation.js';
 import { createGit } from '../git.js';
 
@@ -19,8 +19,16 @@ export async function doctor({ terminal, options, cwd = process.cwd() }) {
   const root = path.resolve(options.value('root') ?? cwd);
   const checks = [];
 
+  let selected;
+  checks.push(await checkCredential('Account profile', async () => {
+    const account = await accountForCommand(options, root);
+    selected = await selectedProfile({ name: account });
+    return ok(`${account}: Gala ${selected.metadata.gala.email} + GitHub @${selected.metadata.githubLogin}`);
+  }));
+
   checks.push(await checkCredential('Gala sign-in', async () => {
-    const gala = await galaCredential({ terminal, apiBaseUrl: options.value('api-base-url') });
+    if (selected == null) throw new Error('account profile is unavailable');
+    const gala = selected.gala;
     const accepted = await galaApi({ baseUrl: gala.apiBaseUrl, token: gala.accessToken }).accepted();
     return accepted
       ? ok(`valid until ${new Date(gala.expiresAt).toLocaleString()}`)
@@ -28,7 +36,8 @@ export async function doctor({ terminal, options, cwd = process.cwd() }) {
   }));
 
   checks.push(await checkCredential('GitHub sign-in', async () => {
-    const github = await githubCredential({ terminal });
+    if (selected == null) throw new Error('account profile is unavailable');
+    const github = selected.github;
     return ok(github.expiresAt
       ? `valid until ${new Date(github.expiresAt).toLocaleString()}`
       : 'signed in');

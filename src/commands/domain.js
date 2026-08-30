@@ -1,7 +1,8 @@
 import path from 'node:path';
 
 import { galaApi } from '../api/gala.js';
-import { galaCredential } from '../auth/gala.js';
+import { accountForCommand } from '../auth/checkout-profile.js';
+import { selectedProfile } from '../auth/profiles.js';
 import { UsageError } from '../cli/args.js';
 import { cliCommand } from '../cli/invocation.js';
 import { customDomain } from '../domain.js';
@@ -22,9 +23,8 @@ export async function domain({ terminal, options, cwd = process.cwd() }) {
   if (action === 'set' && value == null) throw new UsageError('domain set needs a hostname');
   if (action !== 'set' && value != null) throw new UsageError(`domain ${action} takes no hostname`);
 
-  const credential = await galaCredential({
-    terminal, apiBaseUrl: options.value('api-base-url'),
-  });
+  const account = await accountForCommand(options, root);
+  const credential = (await selectedProfile({ name: account })).gala;
   const api = galaApi({ baseUrl: credential.apiBaseUrl, token: credential.accessToken });
 
   if (action === 'status') {

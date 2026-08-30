@@ -2,7 +2,8 @@ import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 
 import { galaApi } from '../api/gala.js';
-import { galaCredential } from '../auth/gala.js';
+import { accountForCommand } from '../auth/checkout-profile.js';
+import { selectedProfile } from '../auth/profiles.js';
 import { UsageError } from '../cli/args.js';
 import { cliCommand } from '../cli/invocation.js';
 import { createGit } from '../git.js';
@@ -21,7 +22,8 @@ export async function prism({ terminal, options, cwd = process.cwd() }) {
   if (!publication || !ULID.test(publication.siteId ?? '')) {
     throw new UsageError('Run this inside a registered Gala publication, or pass --root.');
   }
-  const credential = await galaCredential({ terminal, apiBaseUrl: options.value('api-base-url') });
+  const account = await accountForCommand(options, root);
+  const credential = (await selectedProfile({ name: account })).gala;
   const api = galaApi({ baseUrl: credential.apiBaseUrl, token: credential.accessToken });
   const [action = 'status', ...args] = options.positional;
 

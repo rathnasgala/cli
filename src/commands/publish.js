@@ -2,7 +2,8 @@ import path from 'node:path';
 
 import { checkContent } from '../content.js';
 import { createGit } from '../git.js';
-import { githubCredential } from '../auth/github.js';
+import { accountForCommand } from '../auth/checkout-profile.js';
+import { selectedProfile } from '../auth/profiles.js';
 import { readPublication } from '../publication.js';
 
 /**
@@ -25,7 +26,8 @@ export async function publish({ terminal, options, cwd = process.cwd(), regenera
   const root = path.resolve(options.value('root') ?? cwd);
   const today = options.value('today');
 
-  const github = await githubCredential({ terminal });
+  const account = await accountForCommand(options, root);
+  const github = (await selectedProfile({ name: account })).github;
   const git = createGit({ root, token: github.accessToken });
 
   terminal.step('Catching up with GitHub');
