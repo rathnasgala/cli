@@ -276,12 +276,13 @@ test('detects a real autostash conflict after Git reports a successful rebase', 
   assert.match((await execute('git', ['-C', checkout, 'status', '--short'])).stdout, /UU site\.config\.yml/);
 });
 
-test('automatically reapplies a complete hash-verified managed theme upgrade', async () => {
+test('replays only the verified theme version over an upstream custom-domain change', async () => {
   const workspace = await mkdtemp(path.join(tmpdir(), 'gala-managed-autostash-'));
   const remote = path.join(workspace, 'remote.git');
   const upstream = path.join(workspace, 'upstream');
   const checkout = path.join(workspace, 'checkout');
-  const config = (version) => `framework:\n  themePackage:\n    name: "@rathnasgala/theme"\n    version: ${version}\n`;
+  const config = (version, base = 'https://writer.github.io', prefix = '/site') =>
+    `framework:\n  themePackage:\n    name: "@rathnasgala/theme"\n    version: ${version}\nhosting:\n  canonicalBaseUrl: ${base}\n  pathPrefix: ${prefix}\n`;
   const manifest = (version, reader) => JSON.stringify({
     schemaVersion: 1,
     themePackage: { name: '@rathnasgala/theme', version },
@@ -307,7 +308,9 @@ test('automatically reapplies a complete hash-verified managed theme upgrade', a
   await execute('git', ['--git-dir', remote, 'symbolic-ref', 'HEAD', 'refs/heads/main']);
   await execute('git', ['clone', remote, checkout]);
   await writeTheme(upstream, '2.0.0');
-  await upstreamGit('commit', '-am', 'remote theme');
+  await writeFile(path.join(upstream, 'site.config.yml'),
+    config('2.0.0', 'https://blog.example.com', '/'));
+  await upstreamGit('commit', '-am', 'remote theme and custom domain');
   await upstreamGit('push', 'origin', 'HEAD:main');
   await writeTheme(checkout, '3.0.0');
 
@@ -317,7 +320,11 @@ test('automatically reapplies a complete hash-verified managed theme upgrade', a
   await createGit({ root: checkout }).takeRemote();
 
   assert.equal(await readFile(path.join(checkout, 'src/assets/reader.js'), 'utf8'), 'reader-3.0.0\n');
-  assert.match(await readFile(path.join(checkout, 'site.config.yml'), 'utf8'), /version: 3\.0\.0/);
+  const resolved = await readFile(path.join(checkout, 'site.config.yml'), 'utf8');
+  assert.match(resolved, /version: 3\.0\.0/);
+  assert.match(resolved, /canonicalBaseUrl: https:\/\/blog\.example\.com/);
+  assert.match(resolved, /pathPrefix: \/$/m);
+  assert.doesNotMatch(resolved, /writer\.github\.io/);
   assert.doesNotMatch((await execute('git', ['-C', checkout, 'status', '--short'])).stdout, /^UU /m);
 });
 

@@ -104,15 +104,18 @@ waits until its revision is ready for review or generation fails.
 
 ## Custom domain
 
-Reserve a domain after setup, then advance the verified GitHub Pages flow as DNS propagates:
+Reserve a domain after setup. The command configures everything GitHub already permits and stops
+only when ownership, DNS, certificate issuance, or Pages propagation requires time or user action:
 
 ```console
 npx --yes @rathnasgala/cli@latest domain set blog.example.com
 npx --yes @rathnasgala/cli@latest domain check
 ```
 
-`domain status` resumes an interrupted change, `domain cancel` abandons it, and `domain remove`
-returns the publication to its GitHub Pages address. After removal, delete the old DNS records.
+`domain check` resumes the same workflow and advances every automatic step. `domain status` reports
+where an interrupted change is waiting, `domain cancel` restores the committed address, and
+`domain remove` returns the publication to its GitHub Pages address. After removal, delete the old
+DNS records.
 
 ## When something is wrong
 

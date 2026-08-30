@@ -33,7 +33,7 @@ export async function domain({ terminal, options, cwd = process.cwd() }) {
     const pending = await api.pendingTopologyChange(publication.siteId);
     if (!pending) {
       terminal.result((await ownedSite(api, publication.siteId)).publicationUrl);
-      terminal.note('No domain change is pending.');
+      terminal.done('No domain change is pending');
       return null;
     }
     showPending(terminal, pending);
@@ -44,74 +44,103 @@ export async function domain({ terminal, options, cwd = process.cwd() }) {
     const checked = customDomain(value);
     if (checked.error) throw new UsageError(checked.error);
     const site = await ownedSite(api, publication.siteId);
-    const owner = site.repository.split('/')[0];
-    const change = await api.prepareTopologyChange(publication.siteId, {
+    const requestedUrl = `https://${checked.host}/`;
+    const existing = await api.pendingTopologyChange(publication.siteId);
+    if (!existing && sameAddress(site.publicationUrl, requestedUrl)) {
+      terminal.done(`${requestedUrl} is already this publication’s configured address`);
+      return null;
+    }
+    if (existing && (existing.cname !== checked.host || existing.pathPrefix !== '/')) {
+      throw new UsageError(`A change to ${existing.canonicalBaseUrl}${existing.pathPrefix} is already pending. `
+        + `Resume it with ${cliCommand('domain check')}, or cancel it with ${cliCommand('domain cancel')}.`);
+    }
+    const change = existing ?? await api.prepareTopologyChange(publication.siteId, {
       canonicalBaseUrl: `https://${checked.host}`,
       pathPrefix: '/',
     });
-    terminal.done(`Reserved ${checked.host}`);
-    showVerificationSteps(terminal, checked.host, owner, profile.metadata.githubLogin);
-    return change;
+    if (existing) terminal.note(`Resuming the pending change to ${checked.host}.`);
+    else terminal.done(`Reserved ${checked.host}`);
+    return advanceDomain({ api, siteId: publication.siteId, pending: change, site,
+      login: profile.metadata.githubLogin, terminal });
   }
 
   if (action === 'remove') {
     const existing = await api.pendingTopologyChange(publication.siteId);
-    if (existing) {
-      throw new UsageError('No second domain change can start while another one is pending; cancel it first.');
-    }
     const site = await ownedSite(api, publication.siteId);
     const [owner, repository] = site.repository.split('/');
     const host = `${owner.toLowerCase()}.github.io`;
     const prefix = repository.toLowerCase() === host ? '/' : `/${repository}`;
-    const change = await api.prepareTopologyChange(publication.siteId, {
+    const providerUrl = `https://${host}${prefix === '/' ? '/' : `${prefix}/`}`;
+    if (sameAddress(site.publicationUrl, providerUrl)) {
+      terminal.done(`${providerUrl} is already this publication’s configured address`);
+      return null;
+    }
+    if (existing && (existing.cname !== null
+        || existing.canonicalBaseUrl !== `https://${host}` || existing.pathPrefix !== prefix)) {
+      throw new UsageError(`A change to ${existing.canonicalBaseUrl}${existing.pathPrefix} is already pending. `
+        + `Resume it with ${cliCommand('domain check')}, or cancel it with ${cliCommand('domain cancel')}.`);
+    }
+    const change = existing ?? await api.prepareTopologyChange(publication.siteId, {
       canonicalBaseUrl: `https://${host}`,
       pathPrefix: prefix,
     });
-    const committed = await api.commitTopologyChange(publication.siteId, change.changeId);
-    terminal.done(`Returned to ${committed.canonicalBaseUrl}${prefix === '/' ? '/' : `${prefix}/`}`);
-    terminal.note('Remove the old custom-domain records from your DNS provider.');
-    return committed;
+    if (existing) terminal.note('Resuming removal of the custom domain.');
+    return advanceDomain({ api, siteId: publication.siteId, pending: change, site,
+      login: profile.metadata.githubLogin, terminal, removing: true });
   }
 
   const pending = await api.pendingTopologyChange(publication.siteId);
-  if (!pending) throw new UsageError('No domain change is pending.');
+  if (!pending) {
+    const site = await ownedSite(api, publication.siteId);
+    terminal.result(site.publicationUrl);
+    terminal.done('No domain change is pending');
+    return null;
+  }
 
   if (action === 'cancel') {
     await api.discardTopologyChange(publication.siteId, pending.changeId);
     terminal.done('Cancelled the pending domain change');
+    terminal.note('GitHub Pages and the publication source were restored to the committed address.');
+    if (pending.cname) terminal.note(`Remove DNS records for ${pending.cname} if they are no longer used.`);
     return null;
   }
 
   if (action === 'check') {
     const site = await ownedSite(api, publication.siteId);
-    if (pending.cname && pending.state === 'PREPARED') {
-      let configured;
-      try {
-        configured = await configureWithRetry(api, publication.siteId, pending.changeId, terminal);
-      } catch (failure) {
-        handleDomainFailure(failure, terminal, pending, site, profile.metadata.githubLogin);
-      }
-      terminal.done(`GitHub verified ${configured.cname}`);
-      terminal.note(dnsInstruction(configured.cname, await providerHost(api, publication.siteId)));
-      terminal.note(`After DNS propagates, run: ${cliCommand('domain check')}`);
-      return configured;
-    }
-    let committed;
-    try {
-      committed = await api.commitTopologyChange(publication.siteId, pending.changeId);
-    } catch (failure) {
-      handleDomainFailure(failure, terminal, pending, site, profile.metadata.githubLogin);
-    }
-    terminal.done(committed.cname
-      ? `${committed.cname} is live with enforced HTTPS`
-      : 'The GitHub Pages address is live again');
-    if (!committed.cname) {
-      terminal.note('Remove the old custom-domain records from your DNS provider.');
-    }
-    return committed;
+    return advanceDomain({ api, siteId: publication.siteId, pending, site,
+      login: profile.metadata.githubLogin, terminal, removing: !pending.cname });
   }
 
   throw new UsageError(`Unsupported domain action: ${action}`);
+}
+
+async function advanceDomain({ api, siteId, pending, site, login, terminal, removing = false }) {
+  let current = pending;
+  if (current.cname && current.state === 'PREPARED') {
+    terminal.step('Checking GitHub domain ownership and repository configuration');
+    try {
+      current = await configureWithRetry(api, siteId, current.changeId, terminal);
+    } catch (failure) {
+      return handleDomainFailure(failure, terminal, current, site, login);
+    }
+    terminal.done(`GitHub verified and accepted ${current.cname}`);
+  }
+  terminal.step(current.cname
+    ? 'Checking DNS, certificate, and HTTPS'
+    : 'Restoring the GitHub Pages address');
+  let committed;
+  try {
+    committed = await api.commitTopologyChange(siteId, current.changeId);
+  } catch (failure) {
+    return handleDomainFailure(failure, terminal, current, site, login);
+  }
+  terminal.done(committed.cname
+    ? `https://${committed.cname}/ is live with enforced HTTPS`
+    : 'The GitHub Pages address is live again');
+  if (removing || !committed.cname) {
+    terminal.note('Remove the old custom-domain records from your DNS provider.');
+  }
+  return committed;
 }
 
 async function configureWithRetry(api, siteId, changeId, terminal) {
@@ -139,16 +168,24 @@ function handleDomainFailure(failure, terminal, pending, site, login) {
   const address = pending.cname ?? 'the GitHub Pages address';
   switch (failure.code) {
     case 'GITHUB_PAGES_DOMAIN_VERIFICATION_REQUIRED':
-      terminal.openUrl(repositoryPagesUrl(owner, repository));
-      terminal.note('GitHub’s Custom domain panel shows the current verification, DNS, and HTTPS status.');
-      throw new Error(`GitHub Pages has not accepted ${pending.cname} yet. Follow its Custom domain status, then run: ${retry}`);
+      terminal.note(`GitHub Pages already holds ${pending.cname}; publishing remains safe while ownership verification is pending.`);
+      showVerificationSteps(terminal, pending.cname, owner, login);
+      return pending;
     case 'GITHUB_PAGES_DOMAIN_PROPAGATION_PENDING':
       terminal.openUrl(repositoryPagesUrl(owner, repository));
-      terminal.note('GitHub’s Custom domain panel shows the current verification, DNS, and HTTPS status.');
-      throw new Error(`GitHub accepted ${address} and is still updating Pages. Wait briefly, then run: ${retry}`);
+      terminal.note(`GitHub accepted ${address} and is still updating its Pages state.`);
+      terminal.note(`No action is required. Publishing remains safe; retry with: ${retry}`);
+      return pending;
     case 'GITHUB_PAGES_DNS_PENDING':
       terminal.note(dnsInstruction(pending.cname, `${owner.toLowerCase()}.github.io`));
-      throw new Error(`GitHub is still checking DNS for ${pending.cname}. After it propagates, run: ${retry}`);
+      terminal.openUrl(repositoryPagesUrl(owner, repository));
+      terminal.note(`After saving the DNS records, propagation can take up to 24 hours. Retry with: ${retry}`);
+      return pending;
+    case 'GITHUB_PAGES_CERTIFICATE_PENDING':
+      terminal.openUrl(repositoryPagesUrl(owner, repository));
+      terminal.note(`DNS is accepted. GitHub is provisioning the HTTPS certificate for ${pending.cname}.`);
+      terminal.note(`No action is normally required. If it remains pending, check conflicting DNS and CAA records. Retry with: ${retry}`);
+      return pending;
     case 'GITHUB_PAGES_DNS_INVALID':
       terminal.note(dnsInstruction(pending.cname, `${owner.toLowerCase()}.github.io`));
       throw new Error(`GitHub rejected the DNS records for ${pending.cname}. Correct them, then run: ${retry}`);
@@ -161,9 +198,13 @@ function handleDomainFailure(failure, terminal, pending, site, login) {
       terminal.openUrl(repositoryPagesUrl(owner, repository));
       throw new Error(`GitHub rejected ${address}. Review the repository’s Pages settings, then run: ${retry}`);
     case 'GITHUB_PAGES_TOPOLOGY_NOT_READY':
-      throw new Error(`GitHub Pages has not finished applying ${address}. Wait briefly, then run: ${retry}`);
+      terminal.openUrl(repositoryPagesUrl(owner, repository));
+      terminal.note(`GitHub Pages is finishing HTTPS and the final address for ${address}.`);
+      terminal.note(`No action is required. Retry with: ${retry}`);
+      return pending;
     case 'GITHUB_PAGES_VERIFICATION_UNAVAILABLE':
-      throw new Error(`GitHub Pages is temporarily unavailable. Your pending change is preserved; run later: ${retry}`);
+      terminal.note(`GitHub Pages is temporarily unavailable. The pending change is preserved; retry later with: ${retry}`);
+      return pending;
     case 'SITE_TOPOLOGY_STATE_CONFLICT':
       throw new Error(`This domain change is no longer in the expected state. Inspect it with: ${cliCommand('domain status')}`);
     default:
@@ -182,6 +223,7 @@ function showVerificationSteps(terminal, host, owner, login) {
     : `https://github.com/organizations/${encodeURIComponent(owner)}/settings/pages`);
   terminal.note(`Choose “Add a domain”, enter ${host}, and add GitHub’s TXT record at your DNS provider.`);
   terminal.note(`The TXT record name will be _github-pages-challenge-${owner}.${host}; GitHub supplies its value.`);
+  terminal.note('Keep the TXT record after verification so the domain remains protected.');
   terminal.note(`When GitHub shows “Verified”, run: ${cliCommand('domain check')}`);
 }
 
@@ -194,17 +236,21 @@ async function ownedSite(api, siteId) {
   return site;
 }
 
-async function providerHost(api, siteId) {
-  return (await ownedSite(api, siteId)).repository.split('/')[0].toLowerCase() + '.github.io';
-}
-
 function dnsInstruction(host, target) {
-  return `For a subdomain: CNAME ${host} → ${target}. For an apex domain, use GitHub’s documented A/AAAA records.`;
+  return `DNS action required:\n  Subdomain: CNAME ${host} → ${target} (do not include the repository name).\n`
+    + '  Apex domain: use GitHub Pages A/AAAA records, or an ALIAS/ANAME to the same github.io target.';
 }
 
 function showPending(terminal, pending) {
   terminal.result(`${pending.canonicalBaseUrl}${pending.pathPrefix}`);
-  terminal.note(`State: ${pending.state}`);
-  if (pending.state === 'PREPARED') terminal.note(`Next: verify ownership, then run ${cliCommand('domain check')}.`);
-  else terminal.note(`Next: configure DNS, then run ${cliCommand('domain check')}.`);
+  if (pending.state === 'PREPARED') {
+    terminal.note('GitHub configuration or domain ownership verification is pending.');
+  } else {
+    terminal.note('GitHub accepted the domain; DNS, certificate, or HTTPS activation is pending.');
+  }
+  terminal.note(`Continue with: ${cliCommand('domain check')}`);
+}
+
+function sameAddress(left, right) {
+  return String(left).replace(/\/+$/, '') === String(right).replace(/\/+$/, '');
 }

@@ -142,46 +142,74 @@ export function createGit({ root, token, spawnProcess = spawn } = {}) {
 
 async function reconcileManagedThemeConflict(run, root, conflictedPaths) {
   const manifestPath = '.gala/managed-files.json';
-  if (!conflictedPaths.includes(manifestPath)) return false;
+  const configPath = 'site.config.yml';
+  if (!conflictedPaths.includes(configPath)) return false;
   let manifest;
   try {
-    manifest = JSON.parse((await run(
-      ['show', `:3:${manifestPath}`], { capture: true, binary: true }
-    )).toString('utf8'));
+    const manifestBytes = conflictedPaths.includes(manifestPath)
+      ? await run(['show', `:3:${manifestPath}`], { capture: true, binary: true })
+      : await readFile(path.join(root, manifestPath));
+    manifest = JSON.parse(manifestBytes.toString('utf8'));
   } catch {
     return false;
   }
   if (manifest?.schemaVersion !== 1 || typeof manifest.files !== 'object') return false;
   const managedConflicts = conflictedPaths.filter((entry) => entry !== manifestPath
-    && entry !== 'site.config.yml');
-  if (managedConflicts.length + 2 !== conflictedPaths.length) return false;
-  for (const managed of managedConflicts) {
+    && entry !== configPath);
+  if (managedConflicts.some((entry) => manifest.files[entry] == null)) return false;
+  for (const managed of Object.keys(manifest.files)) {
     const expected = manifest.files[managed];
     if (!/^[0-9a-f]{64}$/.test(expected ?? '')) return false;
-    const local = await run(['show', `:3:${managed}`], { capture: true, binary: true });
+    const local = managedConflicts.includes(managed)
+      ? await run(['show', `:3:${managed}`], { capture: true, binary: true })
+      : await readFile(path.join(root, managed));
     if (createHash('sha256').update(local).digest('hex') !== expected) return false;
   }
-  const worktreeConfig = await readFile(path.join(root, 'site.config.yml'), 'utf8');
-  const resolvedConfig = selectStashedConflictSections(worktreeConfig);
-  let configuration;
+  let baseConfig;
+  let upstreamConfig;
+  let localConfig;
   try {
-    configuration = parse(resolvedConfig);
+    [baseConfig, upstreamConfig, localConfig] = await Promise.all([1, 2, 3].map(async (stage) =>
+      (await run(['show', `:${stage}:${configPath}`], { capture: true, binary: true })).toString('utf8')));
   } catch {
     return false;
   }
-  if (configuration?.framework?.themePackage?.name !== manifest.themePackage?.name
-      || configuration?.framework?.themePackage?.version !== manifest.themePackage?.version) return false;
-  await run(['checkout', '--theirs', '--', manifestPath, ...managedConflicts]);
-  await writeFile(path.join(root, 'site.config.yml'), resolvedConfig);
+  const base = parseConfiguration(baseConfig);
+  const upstream = parseConfiguration(upstreamConfig);
+  const local = parseConfiguration(localConfig);
+  if (!base || !upstream || !local) return false;
+  if (local?.framework?.themePackage?.name !== manifest.themePackage?.name
+      || local?.framework?.themePackage?.version !== manifest.themePackage?.version) return false;
+  if (!onlyThemeVersionChanged(baseConfig, localConfig)) return false;
+  if (upstream?.framework?.themePackage?.name !== manifest.themePackage?.name) return false;
+  const resolvedConfig = replaceThemeVersion(upstreamConfig, manifest.themePackage.version);
+  if (resolvedConfig == null) return false;
+  const localConflictFiles = [
+    ...(conflictedPaths.includes(manifestPath) ? [manifestPath] : []),
+    ...managedConflicts,
+  ];
+  if (localConflictFiles.length > 0) {
+    await run(['checkout', '--theirs', '--', ...localConflictFiles]);
+  }
+  await writeFile(path.join(root, configPath), resolvedConfig);
   await run(['add', '--', ...conflictedPaths]);
   return (await unmergedPaths(run)).length === 0;
 }
 
-function selectStashedConflictSections(value) {
-  return value.replace(
-    /^<<<<<<< Updated upstream\n[\s\S]*?^=======\n([\s\S]*?)^>>>>>>> Stashed changes\n/gm,
-    '$1'
-  );
+function parseConfiguration(value) {
+  try { return parse(value); } catch { return null; }
+}
+
+function onlyThemeVersionChanged(base, local) {
+  const maskedBase = replaceThemeVersion(base, '__managed__');
+  const maskedLocal = replaceThemeVersion(local, '__managed__');
+  return maskedBase != null && maskedBase === maskedLocal;
+}
+
+function replaceThemeVersion(source, version) {
+  const pattern = /(themePackage:\s*\n(?:\s+.*\n)*?\s+version:\s*)[^\s#]+/;
+  if (!pattern.test(source)) return null;
+  return source.replace(pattern, `$1${version}`);
 }
 
 async function unmergedPaths(run) {

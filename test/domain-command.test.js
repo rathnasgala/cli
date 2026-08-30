@@ -23,13 +23,14 @@ test('domain reads server state and advances configure before commit', { timeout
   let pending = null;
   let configureFailure = null;
   let commitFailure = null;
+  let publicationUrl = 'https://writer.github.io/notes/';
   const calls = [];
   const server = createServer((request, response) => {
     calls.push(`${request.method} ${request.url}`);
     response.setHeader('content-type', 'application/json');
     if (request.method === 'GET' && request.url === '/v1/me/sites') {
       response.end(JSON.stringify([{
-        siteId, repository: 'writer/notes', publicationUrl: 'https://blog.example.com',
+        siteId, repository: 'writer/notes', publicationUrl,
       }]));
       return;
     }
@@ -43,17 +44,25 @@ test('domain reads server state and advances configure before commit', { timeout
     }
     if (request.method === 'POST'
         && request.url === `/v1/sites/${siteId}/topology-changes/prepare`) {
+      const removing = publicationUrl === 'https://blog.example.com/';
       pending = {
         changeId,
         state: 'PREPARED',
-        canonicalBaseUrl: 'https://blog.example.com',
-        pathPrefix: '/',
-        cname: 'blog.example.com',
+        canonicalBaseUrl: removing ? 'https://writer.github.io' : 'https://blog.example.com',
+        pathPrefix: removing ? '/notes' : '/',
+        cname: removing ? null : 'blog.example.com',
         configuredAt: null,
         expiresAt: new Date(Date.now() + 60_000).toISOString(),
         committedAt: null,
       };
       response.end(JSON.stringify(pending));
+      return;
+    }
+    if (request.method === 'DELETE'
+        && request.url === `/v1/sites/${siteId}/topology-changes/${changeId}`) {
+      pending = null;
+      response.statusCode = 204;
+      response.end();
       return;
     }
     if (request.method === 'POST'
@@ -81,6 +90,9 @@ test('domain reads server state and advances configure before commit', { timeout
         return;
       }
       response.end(JSON.stringify({ ...pending, state: 'COMMITTED' }));
+      publicationUrl = pending.cname
+        ? `https://${pending.cname}/`
+        : 'https://writer.github.io/notes/';
       pending = null;
       return;
     }
@@ -103,35 +115,38 @@ test('domain reads server state and advances configure before commit', { timeout
   });
 
   const status = await invoke(['domain', 'status']);
-  assert.match(status.stdout, /https:\/\/blog\.example\.com/);
-  assert.doesNotMatch(status.stdout, /writer\.github\.io\/notes/);
+  assert.match(status.stdout, /writer\.github\.io\/notes/);
+  assert.match(status.stdout, /No domain change is pending/);
 
+  configureFailure = { code: 'GITHUB_PAGES_DOMAIN_VERIFICATION_REQUIRED', remaining: 5 };
   const reserved = await invoke(['domain', 'set', 'blog.example.com']);
+  assert.match(reserved.stdout, /Reserved blog\.example\.com/);
+  assert.match(reserved.stdout, /publishing remains safe while ownership verification is pending/);
   assert.match(reserved.stdout, /GitHub owner @writer must verify blog\.example\.com once/);
   assert.match(reserved.stdout, /github\.com\/organizations\/writer\/settings\/pages/);
   assert.match(reserved.stdout, /_github-pages-challenge-writer\.blog\.example\.com/);
   assert.match(reserved.stdout, /domain check/);
 
-  configureFailure = { code: 'GITHUB_PAGES_DOMAIN_VERIFICATION_REQUIRED', remaining: 5 };
-  await assert.rejects(invoke(['domain', 'check']), (failure) => {
-    assert.match(failure.stdout, /github\.com\/writer\/notes\/settings\/pages/);
-    assert.match(failure.stdout, /Custom domain panel shows the current verification, DNS, and HTTPS status/);
-    assert.doesNotMatch(failure.stdout, /Add a domain/);
-    assert.match(failure.stderr, /GitHub Pages has not accepted blog\.example\.com yet/);
+  await assert.rejects(invoke(['domain', 'set', 'other.example.com']), (failure) => {
+    assert.match(failure.stderr, /A change to https:\/\/blog\.example\.com\/ is already pending/);
+    assert.match(failure.stderr, /domain cancel/);
     return true;
   });
+  const cancelled = await invoke(['domain', 'cancel']);
+  assert.match(cancelled.stdout, /Cancelled the pending domain change/);
+  assert.match(cancelled.stdout, /publication source were restored/);
+
   configureFailure = { code: 'GITHUB_PAGES_DOMAIN_PROPAGATION_PENDING', remaining: 2 };
-  const configured = await invoke(['domain', 'check']);
+  commitFailure = 'GITHUB_PAGES_DNS_PENDING';
+  const configured = await invoke(['domain', 'set', 'blog.example.com']);
   assert.match(configured.stdout, /Waiting for GitHub Pages to finish applying the domain/);
-  assert.match(configured.stdout, /GitHub verified blog\.example\.com/);
+  assert.match(configured.stdout, /GitHub verified and accepted blog\.example\.com/);
+  assert.match(configured.stdout, /DNS action required/);
+  assert.match(configured.stdout, /CNAME blog\.example\.com → writer\.github\.io/);
   assert.equal(pending.state, 'PAGES_CONFIGURED');
 
-  commitFailure = 'GITHUB_PAGES_DNS_PENDING';
-  await assert.rejects(invoke(['domain', 'check']), (failure) => {
-    assert.match(failure.stdout, /CNAME blog\.example\.com → writer\.github\.io/);
-    assert.match(failure.stderr, /still checking DNS/);
-    return true;
-  });
+  const dnsPending = await invoke(['domain', 'check']);
+  assert.match(dnsPending.stdout, /CNAME blog\.example\.com → writer\.github\.io/);
   const commitFailures = [
     ['GITHUB_PAGES_DNS_INVALID', /Correct them, then run: .*domain check/,
       /CNAME blog\.example\.com → writer\.github\.io/],
@@ -139,8 +154,6 @@ test('domain reads server state and advances configure before commit', { timeout
       /github\.com\/organizations\/writer\/settings\/installations/],
     ['GITHUB_PAGES_DOMAIN_REJECTED', /GitHub rejected blog\.example\.com/,
       /github\.com\/writer\/notes\/settings\/pages/],
-    ['GITHUB_PAGES_TOPOLOGY_NOT_READY', /has not finished applying blog\.example\.com/],
-    ['GITHUB_PAGES_VERIFICATION_UNAVAILABLE', /pending change is preserved/],
     ['SITE_TOPOLOGY_STATE_CONFLICT', /Inspect it with: .*domain status/],
   ];
   for (const [code, errorPattern, outputPattern] of commitFailures) {
@@ -151,10 +164,30 @@ test('domain reads server state and advances configure before commit', { timeout
       return true;
     });
   }
+  const expectedWaits = [
+    ['GITHUB_PAGES_CERTIFICATE_PENDING', /provisioning the HTTPS certificate/],
+    ['GITHUB_PAGES_TOPOLOGY_NOT_READY', /finishing HTTPS and the final address/],
+    ['GITHUB_PAGES_VERIFICATION_UNAVAILABLE', /pending change is preserved/],
+  ];
+  for (const [code, outputPattern] of expectedWaits) {
+    commitFailure = code;
+    const waiting = await invoke(['domain', 'check']);
+    assert.match(waiting.stdout, outputPattern);
+  }
   commitFailure = null;
   const committed = await invoke(['domain', 'check']);
-  assert.match(committed.stdout, /blog\.example\.com is live with enforced HTTPS/);
+  assert.match(committed.stdout, /https:\/\/blog\.example\.com\/ is live with enforced HTTPS/);
   assert.equal(pending, null);
+  const completed = await invoke(['domain', 'check']);
+  assert.match(completed.stdout, /https:\/\/blog\.example\.com/);
+  assert.match(completed.stdout, /No domain change is pending/);
+  const alreadyLive = await invoke(['domain', 'set', 'blog.example.com']);
+  assert.match(alreadyLive.stdout, /already this publication’s configured address/);
+  const removed = await invoke(['domain', 'remove']);
+  assert.match(removed.stdout, /GitHub Pages address is live again/);
+  assert.match(removed.stdout, /Remove the old custom-domain records/);
+  const alreadyRemoved = await invoke(['domain', 'remove']);
+  assert.match(alreadyRemoved.stdout, /already this publication’s configured address/);
   assert.equal(calls.filter((call) => call.endsWith('/configure')).length, 8);
-  assert.equal(calls.filter((call) => call.endsWith('/commit')).length, 8);
+  assert.equal(calls.filter((call) => call.endsWith('/commit')).length, 11);
 });
