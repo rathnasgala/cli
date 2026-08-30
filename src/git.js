@@ -1,5 +1,8 @@
 import { spawn } from 'node:child_process';
+import { createHash } from 'node:crypto';
+import { readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
+import { parse } from 'yaml';
 
 /**
  * Git, authenticated as the writer's Gala credential rather than as the machine.
@@ -41,21 +44,21 @@ export function createGit({ root, token, spawnProcess = spawn } = {}) {
    * them. On failure every captured line is emitted, because that is exactly when git's text is
    * the most useful thing on screen.
    */
-  const run = (args, { allow = [0], capture = false } = {}) => new Promise((resolve, reject) => {
+  const run = (args, { allow = [0], capture = false, binary = false } = {}) => new Promise((resolve, reject) => {
     const child = spawnProcess('git', ['-C', cwd, ...credentialArguments(token), ...args], {
       cwd,
       shell: false,
       stdio: ['ignore', 'pipe', 'pipe'],
       env: environmentFor(token)
     });
-    let stdout = '';
+    const stdout = [];
     let stderr = '';
-    child.stdout?.on('data', (chunk) => { stdout += chunk; });
+    child.stdout?.on('data', (chunk) => { stdout.push(Buffer.from(chunk)); });
     child.stderr?.on('data', (chunk) => { stderr += chunk; });
     child.once('error', reject);
     child.once('exit', (code, signal) => {
       if (signal || !allow.includes(code)) {
-        const said = `${stdout}${stderr}`.trim();
+        const said = `${Buffer.concat(stdout).toString('utf8')}${stderr}`.trim();
         const failure = new Error(signal
           ? `git ${args[0]} stopped by ${signal}`
           : `git ${args[0]} exited with ${code}`);
@@ -63,7 +66,8 @@ export function createGit({ root, token, spawnProcess = spawn } = {}) {
         reject(failure);
         return;
       }
-      resolve(capture ? stdout.trim() : code);
+      const output = Buffer.concat(stdout);
+      resolve(capture ? (binary ? output : output.toString('utf8').trim()) : code);
     });
   });
 
@@ -105,9 +109,11 @@ export function createGit({ root, token, spawnProcess = spawn } = {}) {
      * makes the post-publish validation pass the sole local writer of any missing content ID.
      */
     async takeRemote() {
-      const unmerged = await run(['diff', '--name-only', '--diff-filter=U', '-z'], { capture: true });
-      const conflictedPaths = unmerged.split('\0').filter(Boolean);
+      const conflictedPaths = await unmergedPaths(run);
       if (conflictedPaths.length > 0) {
+        if (await reconcileManagedThemeConflict(run, cwd, conflictedPaths).catch(() => false)) {
+          return git.takeRemote();
+        }
         const failure = new Error('Git has unresolved conflicts. Gala left them untouched. Run git '
           + 'status, resolve or abort the operation it reports, then publish again.');
         failure.detail = `Conflicted files:\n${conflictedPaths.join('\n')}`;
@@ -116,11 +122,73 @@ export function createGit({ root, token, spawnProcess = spawn } = {}) {
       const branch = await git.branch();
       await run(['fetch', 'origin', branch]);
       await run(['rebase', '--autostash', `origin/${branch}`]);
+      const reappliedConflicts = await unmergedPaths(run);
+      if (reappliedConflicts.length > 0) {
+        if (await reconcileManagedThemeConflict(run, cwd, reappliedConflicts).catch(() => false)) {
+          return git.head();
+        }
+        const failure = new Error('Git updated from GitHub, but could not reapply your local work '
+          + 'without conflicts. Gala left every file untouched. Run git status, resolve the named '
+          + 'files, git add them, then publish again.');
+        failure.detail = `Conflicted files:\n${reappliedConflicts.join('\n')}`;
+        throw failure;
+      }
       return git.head();
     }
   };
 
   return git;
+}
+
+async function reconcileManagedThemeConflict(run, root, conflictedPaths) {
+  const manifestPath = '.gala/managed-files.json';
+  if (!conflictedPaths.includes(manifestPath)) return false;
+  let manifest;
+  try {
+    manifest = JSON.parse((await run(
+      ['show', `:3:${manifestPath}`], { capture: true, binary: true }
+    )).toString('utf8'));
+  } catch {
+    return false;
+  }
+  if (manifest?.schemaVersion !== 1 || typeof manifest.files !== 'object') return false;
+  const managedConflicts = conflictedPaths.filter((entry) => entry !== manifestPath
+    && entry !== 'site.config.yml');
+  if (managedConflicts.length + 2 !== conflictedPaths.length) return false;
+  for (const managed of managedConflicts) {
+    const expected = manifest.files[managed];
+    if (!/^[0-9a-f]{64}$/.test(expected ?? '')) return false;
+    const local = await run(['show', `:3:${managed}`], { capture: true, binary: true });
+    if (createHash('sha256').update(local).digest('hex') !== expected) return false;
+  }
+  const worktreeConfig = await readFile(path.join(root, 'site.config.yml'), 'utf8');
+  const resolvedConfig = selectStashedConflictSections(worktreeConfig);
+  let configuration;
+  try {
+    configuration = parse(resolvedConfig);
+  } catch {
+    return false;
+  }
+  if (configuration?.framework?.themePackage?.name !== manifest.themePackage?.name
+      || configuration?.framework?.themePackage?.version !== manifest.themePackage?.version) return false;
+  await run(['checkout', '--theirs', '--', manifestPath, ...managedConflicts]);
+  await writeFile(path.join(root, 'site.config.yml'), resolvedConfig);
+  await run(['add', '--', ...conflictedPaths]);
+  return (await unmergedPaths(run)).length === 0;
+}
+
+function selectStashedConflictSections(value) {
+  return value.replace(
+    /^<<<<<<< Updated upstream\n[\s\S]*?^=======\n([\s\S]*?)^>>>>>>> Stashed changes\n/gm,
+    '$1'
+  );
+}
+
+async function unmergedPaths(run) {
+  const unmerged = await run(
+    ['diff', '--name-only', '--diff-filter=U', '-z'], { capture: true }
+  );
+  return unmerged.split('\0').filter(Boolean);
 }
 
 export function cloneRepository({ url, target, token, spawnProcess = spawn }) {

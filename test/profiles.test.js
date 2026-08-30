@@ -6,6 +6,7 @@ import test from 'node:test';
 
 import {
   addProfile,
+  authenticatedProfile,
   activeProfile,
   listProfiles,
   profilePaths,
@@ -183,6 +184,37 @@ test('selection fails closed when either half of a profile is expired', async ()
   await seed(root, 'github-expired', { githubExpiry: '2000-01-01T00:00:00.000Z' });
   await assert.rejects(selectedProfile({ name: 'gala-expired', root }), /expired/);
   await assert.rejects(selectedProfile({ name: 'github-expired', root }), /expired/);
+});
+
+test('an interactive command refreshes an expired profile and resumes with the same identity', async () => {
+  const root = await scratch();
+  await seed(root, 'owner', { galaExpiry: '2000-01-01T00:00:00.000Z' });
+  const messages = [];
+  const terminal = { interactive: true, step: (value) => messages.push(value),
+    done: (value) => messages.push(value) };
+  const refreshed = await authenticatedProfile({
+    name: 'owner', root, terminal,
+    reauthenticate: async () => ({
+      metadata: { name: 'owner' }, gala: { accessToken: 'fresh-gala' },
+      github: { accessToken: 'fresh-github' },
+    }),
+  });
+  assert.equal(refreshed.github.accessToken, 'fresh-github');
+  assert.deepEqual(messages, [
+    'Account profile owner expired; signing in again',
+    'Signed in again as owner',
+  ]);
+});
+
+test('automatic refresh refuses a different identity and never prompts without a terminal', async () => {
+  const root = await scratch();
+  await seed(root, 'owner', { githubExpiry: '2000-01-01T00:00:00.000Z' });
+  await assert.rejects(authenticatedProfile({ name: 'owner', root }), /has expired/);
+  await assert.rejects(authenticatedProfile({
+    name: 'owner', root,
+    terminal: { interactive: true, step() {}, done() {} },
+    reauthenticate: async () => ({ metadata: { name: 'other' }, gala: {}, github: {} }),
+  }), /uses account profile owner, but you signed in as other/);
 });
 
 test('selection rejects missing, corrupt, incomplete and old metadata', async () => {

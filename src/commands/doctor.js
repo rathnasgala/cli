@@ -3,7 +3,7 @@ import path from 'node:path';
 
 import { galaApi } from '../api/gala.js';
 import { accountForCommand } from '../auth/checkout-profile.js';
-import { selectedProfile } from '../auth/profiles.js';
+import { authenticatedProfile } from '../auth/profiles.js';
 import { cliCommand } from '../cli/invocation.js';
 import { createGit } from '../git.js';
 
@@ -22,7 +22,7 @@ export async function doctor({ terminal, options, cwd = process.cwd() }) {
   let selected;
   checks.push(await checkCredential('Account profile', async () => {
     const account = await accountForCommand(options, root, { terminal });
-    selected = await selectedProfile({ name: account });
+    selected = await authenticatedProfile({ name: account, terminal });
     return ok(`${account}: Gala ${selected.metadata.gala.email} + GitHub @${selected.metadata.githubLogin}`);
   }));
 

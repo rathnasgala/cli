@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { EventEmitter } from 'node:events';
-import { mkdtemp, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
@@ -157,6 +158,7 @@ test('a clean checkout still fetches and rebases its named branch', async () => 
     { exit: 0, stdout: 'main\n' },
     { exit: 0, stdout: '' },
     { exit: 0, stdout: '' },
+    { exit: 0, stdout: '' },
     { exit: 0, stdout: `${'a'.repeat(40)}\n` },
   ];
   const spawnProcess = (command, args, options) => {
@@ -178,8 +180,145 @@ test('a clean checkout still fetches and rebases its named branch', async () => 
     ['rev-parse', '--abbrev-ref', 'HEAD'],
     ['fetch', 'origin', 'main'],
     ['rebase', '--autostash', 'origin/main'],
+    ['diff', '--name-only', '--diff-filter=U', '-z'],
     ['rev-parse', 'HEAD'],
   ]);
+});
+
+test('stops after a successful autostash rebase that leaves conflicts', async () => {
+  const calls = [];
+  const responses = [
+    { exit: 0, stdout: '' },
+    { exit: 0, stdout: 'main\n' },
+    { exit: 0, stdout: '' },
+    { exit: 0, stdout: '' },
+    { exit: 0, stdout: 'site.config.yml\0src/assets/reader.js\0' },
+  ];
+  const spawnProcess = (command, args, options) => {
+    calls.push({ command, args, options });
+    const child = new EventEmitter();
+    child.stdout = new EventEmitter();
+    child.stderr = new EventEmitter();
+    queueMicrotask(() => {
+      const response = responses.shift();
+      if (response.stdout) child.stdout.emit('data', response.stdout);
+      child.emit('exit', response.exit, null);
+    });
+    return child;
+  };
+
+  await assert.rejects(
+    createGit({ root: '/site', spawnProcess }).takeRemote(),
+    (failure) => {
+      assert.match(failure.message, /could not reapply your local work without conflicts/);
+      assert.equal(failure.detail, 'Conflicted files:\nsite.config.yml\nsrc/assets/reader.js');
+      return true;
+    }
+  );
+  assert.ok(!calls.some(({ args }) => args.slice(-2).join(' ') === 'rev-parse HEAD'));
+});
+
+test('refuses managed conflict recovery when local bytes fail their manifest hash', async () => {
+  const responses = [
+    { exit: 0, stdout: '' },
+    { exit: 0, stdout: 'main\n' },
+    { exit: 0, stdout: '' },
+    { exit: 0, stdout: '' },
+    { exit: 0, stdout: '.gala/managed-files.json\0site.config.yml\0src/assets/reader.js\0' },
+    { exit: 0, stdout: JSON.stringify({ schemaVersion: 1,
+      themePackage: { name: '@rathnasgala/theme', version: '3.0.0' },
+      files: { 'src/assets/reader.js': '0'.repeat(64) } }) },
+    { exit: 0, stdout: 'tampered-reader' },
+  ];
+  const spawnProcess = (_command, _args, _options) => {
+    const child = new EventEmitter();
+    child.stdout = new EventEmitter();
+    child.stderr = new EventEmitter();
+    queueMicrotask(() => {
+      const response = responses.shift();
+      if (response.stdout) child.stdout.emit('data', response.stdout);
+      child.emit('exit', response.exit, null);
+    });
+    return child;
+  };
+  await assert.rejects(
+    createGit({ root: '/site', spawnProcess }).takeRemote(),
+    /could not reapply your local work without conflicts/
+  );
+});
+
+test('detects a real autostash conflict after Git reports a successful rebase', async () => {
+  const workspace = await mkdtemp(path.join(tmpdir(), 'gala-autostash-conflict-'));
+  const remote = path.join(workspace, 'remote.git');
+  const upstream = path.join(workspace, 'upstream');
+  const checkout = path.join(workspace, 'checkout');
+  await execute('git', ['init', '--bare', remote]);
+  await execute('git', ['clone', remote, upstream]);
+  const upstreamGit = (...args) => execute('git', ['-C', upstream, ...args]);
+  await upstreamGit('config', 'user.name', 'Gala test');
+  await upstreamGit('config', 'user.email', 'test@gala.invalid');
+  await writeFile(path.join(upstream, 'site.config.yml'), 'version: 1\n');
+  await upstreamGit('add', 'site.config.yml');
+  await upstreamGit('commit', '-m', 'base');
+  await upstreamGit('push', 'origin', 'HEAD:main');
+  await execute('git', ['--git-dir', remote, 'symbolic-ref', 'HEAD', 'refs/heads/main']);
+  await execute('git', ['clone', remote, checkout]);
+  await writeFile(path.join(upstream, 'site.config.yml'), 'version: 2\n');
+  await upstreamGit('commit', '-am', 'remote theme');
+  await upstreamGit('push', 'origin', 'main');
+  await writeFile(path.join(checkout, 'site.config.yml'), 'version: 3\n');
+
+  await assert.rejects(
+    createGit({ root: checkout }).takeRemote(),
+    /could not reapply your local work without conflicts/
+  );
+  assert.match(await readFile(path.join(checkout, 'site.config.yml'), 'utf8'), /<<<<<<< Updated upstream/);
+  assert.match((await execute('git', ['-C', checkout, 'status', '--short'])).stdout, /UU site\.config\.yml/);
+});
+
+test('automatically reapplies a complete hash-verified managed theme upgrade', async () => {
+  const workspace = await mkdtemp(path.join(tmpdir(), 'gala-managed-autostash-'));
+  const remote = path.join(workspace, 'remote.git');
+  const upstream = path.join(workspace, 'upstream');
+  const checkout = path.join(workspace, 'checkout');
+  const config = (version) => `framework:\n  themePackage:\n    name: "@rathnasgala/theme"\n    version: ${version}\n`;
+  const manifest = (version, reader) => JSON.stringify({
+    schemaVersion: 1,
+    themePackage: { name: '@rathnasgala/theme', version },
+    files: { 'src/assets/reader.js': createHash('sha256').update(reader).digest('hex') },
+  }, null, 2) + '\n';
+  const writeTheme = async (directory, version) => {
+    const reader = `reader-${version}\n`;
+    await mkdir(path.join(directory, '.gala'), { recursive: true });
+    await mkdir(path.join(directory, 'src/assets'), { recursive: true });
+    await writeFile(path.join(directory, '.gala/managed-files.json'), manifest(version, reader));
+    await writeFile(path.join(directory, 'site.config.yml'), config(version));
+    await writeFile(path.join(directory, 'src/assets/reader.js'), reader);
+  };
+  await execute('git', ['init', '--bare', remote]);
+  await execute('git', ['clone', remote, upstream]);
+  const upstreamGit = (...args) => execute('git', ['-C', upstream, ...args]);
+  await upstreamGit('config', 'user.name', 'Gala test');
+  await upstreamGit('config', 'user.email', 'test@gala.invalid');
+  await writeTheme(upstream, '1.0.0');
+  await upstreamGit('add', '.');
+  await upstreamGit('commit', '-m', 'base');
+  await upstreamGit('push', 'origin', 'HEAD:main');
+  await execute('git', ['--git-dir', remote, 'symbolic-ref', 'HEAD', 'refs/heads/main']);
+  await execute('git', ['clone', remote, checkout]);
+  await writeTheme(upstream, '2.0.0');
+  await upstreamGit('commit', '-am', 'remote theme');
+  await upstreamGit('push', 'origin', 'main');
+  await writeTheme(checkout, '3.0.0');
+
+  await execute('git', ['-C', checkout, 'fetch', 'origin', 'main']);
+  await execute('git', ['-C', checkout, 'rebase', '--autostash', 'origin/main']);
+  assert.match((await execute('git', ['-C', checkout, 'status', '--short'])).stdout, /^UU /m);
+  await createGit({ root: checkout }).takeRemote();
+
+  assert.equal(await readFile(path.join(checkout, 'src/assets/reader.js'), 'utf8'), 'reader-3.0.0\n');
+  assert.match(await readFile(path.join(checkout, 'site.config.yml'), 'utf8'), /version: 3\.0\.0/);
+  assert.doesNotMatch((await execute('git', ['-C', checkout, 'status', '--short'])).stdout, /^UU /m);
 });
 
 test('populates an empty git repository without replacing its metadata directory', async () => {

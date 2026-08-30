@@ -16,9 +16,9 @@ test('commands never load Gala and GitHub credentials independently', async () =
   for (const name of authenticatedCommands) {
     const source = await readFile(new URL(`../src/commands/${name}.js`, import.meta.url), 'utf8');
     assert.doesNotMatch(source, /galaCredential|githubCredential/, name);
-    if (name === 'init') assert.match(source, /selectedProfile/, 'init has no active-profile selection');
+    if (name === 'init') assert.match(source, /authenticatedProfile/, 'init has no active-profile selection');
     else assert.match(source, /accountForCommand/, `${name} has no checkout-account gate`);
-    assert.match(source, /selectedProfile/, `${name} bypasses the paired profile`);
+    assert.match(source, /authenticatedProfile/, `${name} bypasses the paired profile`);
   }
 });
 

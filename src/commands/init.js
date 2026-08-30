@@ -4,7 +4,7 @@ import path from 'node:path';
 import { galaApi } from '../api/gala.js';
 import { githubApi } from '../api/github.js';
 import { accountForCommand, bindCheckoutProfile } from '../auth/checkout-profile.js';
-import { selectedProfile } from '../auth/profiles.js';
+import { authenticatedProfile } from '../auth/profiles.js';
 import { cloneRepository, createGit, populateEmptyRepository } from '../git.js';
 import { UsageError } from '../cli/args.js';
 import { CLI_INVOCATION, shellArgument } from '../cli/invocation.js';
@@ -45,7 +45,7 @@ export async function init({ terminal, options, cwd = process.cwd() }) {
 
   const destination = await inspectDestination(directory);
 
-  const profile = await selectedProfile({ name: options.value('account') });
+  const profile = await authenticatedProfile({ name: options.value('account'), terminal });
   const { gala, github, metadata } = profile;
   const account = metadata.name;
   terminal.step(`Account ${account}: Gala ${metadata.gala.email} + GitHub @${metadata.githubLogin}`);

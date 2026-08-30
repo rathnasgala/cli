@@ -122,6 +122,26 @@ export async function selectedProfile({ name, root = credentialDirectory() } = {
   return readProfile(selected, { root });
 }
 
+export async function authenticatedProfile({
+  name,
+  terminal,
+  root = credentialDirectory(),
+  reauthenticate = addProfile,
+} = {}) {
+  try {
+    return await selectedProfile({ name, root });
+  } catch (failure) {
+    if (!(failure instanceof ExpiredProfileError) || !terminal?.interactive) throw failure;
+    terminal.step(`Account profile ${failure.profileName} expired; signing in again`);
+    const refreshed = await reauthenticate({ terminal, root });
+    if (refreshed.metadata.name !== failure.profileName) {
+      throw new UsageError(`This repository uses account profile ${failure.profileName}, but you signed in as ${refreshed.metadata.name}. Sign in again with the matching account.`);
+    }
+    terminal.done(`Signed in again as ${failure.profileName}`);
+    return refreshed;
+  }
+}
+
 export async function activeProfile({ root = credentialDirectory() } = {}) {
   try {
     const value = (await readFile(path.join(root, 'active-profile'), 'utf8')).trim();
@@ -145,11 +165,16 @@ async function readProfile(name, { root }) {
   }
   const [gala, github] = await Promise.all([readCredential(paths.gala), readCredential(paths.github)]);
   if (gala == null || github == null) {
-    throw new UsageError(
-      `Account profile ${name} has expired; run \`npx --yes @rathnasgala/cli@latest auth add\` to sign in again.`
-    );
+    throw new ExpiredProfileError(name);
   }
   return { metadata, gala, github };
+}
+
+class ExpiredProfileError extends UsageError {
+  constructor(profileName) {
+    super(`Account profile ${profileName} has expired; run \`npx --yes @rathnasgala/cli@latest auth add\` to sign in again.`);
+    this.profileName = profileName;
+  }
 }
 
 async function setActiveProfile(name, { root }) {
