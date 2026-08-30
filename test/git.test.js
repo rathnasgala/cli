@@ -265,7 +265,7 @@ test('detects a real autostash conflict after Git reports a successful rebase', 
   await execute('git', ['clone', remote, checkout]);
   await writeFile(path.join(upstream, 'site.config.yml'), 'version: 2\n');
   await upstreamGit('commit', '-am', 'remote theme');
-  await upstreamGit('push', 'origin', 'main');
+  await upstreamGit('push', 'origin', 'HEAD:main');
   await writeFile(path.join(checkout, 'site.config.yml'), 'version: 3\n');
 
   await assert.rejects(
@@ -308,7 +308,7 @@ test('automatically reapplies a complete hash-verified managed theme upgrade', a
   await execute('git', ['clone', remote, checkout]);
   await writeTheme(upstream, '2.0.0');
   await upstreamGit('commit', '-am', 'remote theme');
-  await upstreamGit('push', 'origin', 'main');
+  await upstreamGit('push', 'origin', 'HEAD:main');
   await writeTheme(checkout, '3.0.0');
 
   await execute('git', ['-C', checkout, 'fetch', 'origin', 'main']);
