@@ -1,9 +1,14 @@
 import { spawn } from 'node:child_process';
-import { access } from 'node:fs/promises';
+import { access, mkdir, rename, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
+import { galaApi } from '../api/gala.js';
+import { accountForCommand } from '../auth/checkout-profile.js';
+import { authenticatedProfile } from '../auth/profiles.js';
 import { checkContent } from '../content.js';
 import { readPublication } from '../publication.js';
+
+const ULID = /^[0-7][0-9A-HJKMNP-TV-Z]{25}$/;
 
 /**
  * Builds the site and serves it locally.
@@ -18,16 +23,24 @@ import { readPublication } from '../publication.js';
  * should not need to know npm is involved at all.
  */
 export async function preview({
-  terminal, options, cwd = process.cwd(), spawnProcess = spawn, regenerate
+  terminal, options, cwd = process.cwd(), spawnProcess = spawn, regenerate,
+  refreshSettings = refreshBuildSettings
 }) {
   const root = path.resolve(options.value('root') ?? cwd);
   const today = options.value('today');
+  const publication = await readPublication(root);
 
   terminal.step('Checking content');
   await checkContent({
     terminal, root, today, preview: true, ...(regenerate == null ? {} : { regenerate })
   });
   terminal.done('Content is valid');
+
+  if (ULID.test(publication?.siteId ?? '')) {
+    terminal.step('Reading Gala pagination policy');
+    await refreshSettings({ terminal, options, root, siteId: publication.siteId });
+    terminal.done('Pagination policy is current');
+  }
 
   const eleventy = path.join(root, 'node_modules', '@11ty', 'eleventy', 'cmd.cjs');
   if (!await exists(eleventy)) {
@@ -43,7 +56,6 @@ export async function preview({
   await buildReader(root, spawnProcess);
   terminal.done('Preview is ready');
 
-  const publication = await readPublication(root);
   terminal.step('Starting the preview - stop it with Ctrl-C');
   if (publication != null) terminal.note(`this is ${publication.name ?? 'your publication'} as it will look`);
   terminal.blank();
@@ -69,6 +81,55 @@ export async function preview({
       }
     });
   });
+}
+
+export async function refreshBuildSettings({
+  terminal,
+  options,
+  root,
+  siteId,
+  resolveAccount = accountForCommand,
+  authenticate = authenticatedProfile,
+  createApi = galaApi,
+  now = () => new Date()
+}) {
+  const account = await resolveAccount(options, root, { terminal });
+  const credential = (await authenticate({ name: account, terminal })).gala;
+  const resolution = await createApi({
+    baseUrl: credential.apiBaseUrl,
+    token: credential.accessToken
+  }).json(`/v1/sites/${siteId}/pagination/policy`, { action: 'Pagination policy lookup' });
+  const policy = resolution;
+  if (policy == null || Array.isArray(policy) || typeof policy !== 'object'
+      || !['minimumPageSize', 'maximumPageSize', 'defaultPageSize'].every(
+        (field) => Number.isSafeInteger(policy[field])
+      )
+      || policy.minimumPageSize < 1 || policy.maximumPageSize > 100
+      || policy.minimumPageSize > policy.defaultPageSize
+      || policy.defaultPageSize > policy.maximumPageSize) {
+    throw new Error('Gala returned an unusable pagination policy. The preview was not started.');
+  }
+  await atomicJson(path.join(root, '.gala', 'build', 'build-settings.json'), {
+    schemaVersion: 1,
+    generatedAt: now().toISOString(),
+    paginationPolicy: {
+      minimumPageSize: policy.minimumPageSize,
+      maximumPageSize: policy.maximumPageSize,
+      defaultPageSize: policy.defaultPageSize
+    }
+  });
+}
+
+async function atomicJson(target, value) {
+  await mkdir(path.dirname(target), { recursive: true });
+  const temporary = `${target}.${process.pid}.tmp`;
+  try {
+    await writeFile(temporary, `${JSON.stringify(value, null, 2)}\n`, { flag: 'wx', mode: 0o600 });
+    await rename(temporary, target);
+  } catch (failure) {
+    await rm(temporary, { force: true });
+    throw failure;
+  }
 }
 
 function buildReader(root, spawnProcess) {

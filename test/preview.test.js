@@ -1,11 +1,13 @@
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
-import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 
-import { preview } from '../src/commands/preview.js';
+import { preview, refreshBuildSettings } from '../src/commands/preview.js';
+
+const SITE_ID = '01M0T5Z4FBK60HTS7FH8JK06QK';
 
 const options = { value: (name) => (name === 'root' ? root : undefined), on: () => false, positional: [] };
 let root;
@@ -103,6 +105,56 @@ test('validates through the read-only preview manifest contract', async () => {
   await preview({ terminal: terminal(), options, cwd: root, spawnProcess, regenerate });
 
   assert.equal(received.preview, true);
+});
+
+test('a registered preview refreshes platform settings before starting Eleventy', async () => {
+  await eleventyPresent();
+  await writeFile(path.join(root, 'site.config.yml'), `site:\n  id: ${SITE_ID}\nhosting:\n  canonicalBaseUrl: https://writer.github.io\n  pathPrefix: /notes\n`);
+  const events = [];
+  const { spawnProcess } = runner();
+
+  await preview({
+    terminal: terminal(), options, cwd: root, spawnProcess, regenerate: nothingToCheck,
+    refreshSettings: async ({ siteId }) => { events.push(siteId); }
+  });
+
+  assert.deepEqual(events, [SITE_ID]);
+});
+
+test('writes only a validated live pagination policy into the preview build artifact', async () => {
+  await refreshBuildSettings({
+    terminal: terminal(), options, root, siteId: SITE_ID,
+    resolveAccount: async () => 'writer',
+    authenticate: async () => ({
+      gala: { apiBaseUrl: 'https://api.example.com', accessToken: 'token' }
+    }),
+    createApi: () => ({
+      json: async (url) => {
+        assert.equal(url, `/v1/sites/${SITE_ID}/pagination/policy`);
+        return { minimumPageSize: 12, maximumPageSize: 100, defaultPageSize: 24 };
+      }
+    }),
+    now: () => new Date('2026-08-30T22:00:00Z')
+  });
+
+  assert.deepEqual(JSON.parse(await readFile(
+    path.join(root, '.gala', 'build', 'build-settings.json'), 'utf8'
+  )), {
+    schemaVersion: 1,
+    generatedAt: '2026-08-30T22:00:00.000Z',
+    paginationPolicy: { minimumPageSize: 12, maximumPageSize: 100, defaultPageSize: 24 }
+  });
+
+  await assert.rejects(() => refreshBuildSettings({
+    terminal: terminal(), options, root, siteId: SITE_ID,
+    resolveAccount: async () => 'writer',
+    authenticate: async () => ({
+      gala: { apiBaseUrl: 'https://api.example.com', accessToken: 'token' }
+    }),
+    createApi: () => ({ json: async () => ({
+      minimumPageSize: 30, maximumPageSize: 20, defaultPageSize: 24
+    }) })
+  }), /unusable pagination policy/);
 });
 
 test('a failed install reports npm’s own words rather than a module-resolution stack', async () => {

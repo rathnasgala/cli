@@ -66,7 +66,30 @@ npx --yes @rathnasgala/cli@latest new "The places we return to"
 ```
 
 This creates a local Markdown draft; it does not publish anything. It also tells you the address the
-post will use after a successful publication. Write below the second `---` line.
+post will use after a successful publication. Without `--language`, Gala uses the publication's
+`site.defaultLanguage`. Write below the second `---` line.
+
+Create one new article in several languages at once:
+
+```console
+npx --yes @rathnasgala/cli@latest new "A multilingual idea" --languages en,ta,fr
+```
+
+This creates `index.en.md`, `index.ta.md`, and `index.fr.md` in one post folder. They share one
+article ID and URL name, so the publication presents them as language choices on one article and
+keeps their interactions and analytics together. The working title is copied into every file;
+localize each title and body before publishing. If one requested language already exists, Gala
+leaves that file unchanged and creates only the missing variants.
+
+Add a language to a post that already exists by using the post folder's URL name:
+
+```console
+npx --yes @rathnasgala/cli@latest new "மொழிபெயர்க்கப்பட்ட தலைப்பு" --language ta --translation-of a-durable-idea
+```
+
+The new file reuses the existing article ID. If the target does not exist, Gala lists the available
+post URL names instead of silently creating an unrelated article. Existing language files are never
+overwritten. Run `npx --yes @rathnasgala/cli@latest new --help` to see these forms in the terminal.
 
 ```console
 npx --yes @rathnasgala/cli@latest preview
@@ -143,7 +166,7 @@ Run any command with `--help`.
 | --- | --- | --- |
 | `init` | Create a publication in the current or named empty directory | `--name`, `--domain`, `--account` |
 | `domain` | Inspect or change the custom domain | `--root`, `--account` |
-| `new` | Start a post | `--language`, `--root`, `--today` |
+| `new` | Start a post or add translations | `--language`, `--languages`, `--translation-of`, `--root`, `--today` |
 | `preview` | Build and serve the publication locally | `--root`, `--today` |
 | `publish` | Check, record and send your work to GitHub | `--root`, `--today`, `--account`, `--skip-checks` |
 | `prism` | Manage author-approved reading configurations | `--root`, `--account`, `--language`, `--depth`, `--intent`, `--modality`, `--file`, `--reason`, `--yes` |

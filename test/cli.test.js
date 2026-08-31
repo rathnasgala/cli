@@ -60,6 +60,19 @@ test('every command explains itself', async () => {
   }
 });
 
+test('new help makes single-language, translation, and bulk multilingual authoring discoverable', async () => {
+  const global = await invoke(['--help']);
+  assert.match(global.stdout, /new\s+Start a post or add translations/);
+
+  const { stdout, code } = await invoke(['new', '--help']);
+  assert.equal(code, 0);
+  assert.match(stdout, /new "A durable idea" --languages en,ta,fr/);
+  assert.match(stdout,
+    /new "Translated title" --language ta --translation-of existing-post-slug/);
+  assert.match(stdout, /share one article ID, URL name, interactions, and analytics/);
+  assert.match(stdout, /Without a language option, a new post uses site\.defaultLanguage/);
+});
+
 test('help exposes account selection for every authenticated command', async () => {
   for (const command of ['init', 'domain', 'publish', 'prism', 'doctor']) {
     const { stdout, code } = await invoke([command, '--help']);

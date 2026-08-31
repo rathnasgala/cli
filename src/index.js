@@ -21,7 +21,8 @@ if (command == null) {
 }
 
 if (argv.includes('--help') || argv.includes('-h')) {
-  process.stdout.write(`\n  ${command.usage ?? cliCommand(name)}\n  ${command.summary}\n\n`);
+  process.stdout.write(`\n  ${command.usage ?? cliCommand(name)}\n  ${command.summary}\n`
+    + (command.help == null ? '\n' : `\n${command.help}\n\n`));
   process.exit(0);
 }
 

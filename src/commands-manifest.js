@@ -44,14 +44,29 @@ export const COMMANDS = {
     run: domain
   },
   new: {
-    summary: 'Start a post',
-    usage: cliCommand('new "A durable idea" [--language en]'),
-    flags: ['root', 'language', 'today'],
+    summary: 'Start a post or add translations',
+    usage: cliCommand('new ["Post title"] [--language en | --languages en,ta] [--translation-of existing-post-slug]'),
+    help: [
+      'Create one post in the publication default language:',
+      `    ${cliCommand('new "A durable idea"')}`,
+      '',
+      'Create one new post in several languages at once:',
+      `    ${cliCommand('new "A durable idea" --languages en,ta,fr')}`,
+      '',
+      'Add one language to an existing post:',
+      `    ${cliCommand('new "Translated title" --language ta --translation-of existing-post-slug')}`,
+      '',
+      'Language variants share one article ID, URL name, interactions, and analytics.',
+      'Existing files are never overwritten. Without a language option, a new post uses site.defaultLanguage.'
+    ].join('\n'),
+    flags: ['root', 'language', 'languages', 'translation-of', 'today'],
     run: createPost
   },
   preview: {
     summary: 'Build and serve the publication locally',
-    flags: ['root', 'today'],
+    usage: cliCommand('preview [--root path] [--today YYYY-MM-DD] [--account github-login]'),
+    help: 'Registered publications read the current ROOT pagination policy before building.',
+    flags: ['root', 'today', 'account'],
     run: preview
   },
   publish: {
