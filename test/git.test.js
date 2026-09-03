@@ -159,6 +159,7 @@ test('a clean checkout still fetches and rebases its named branch', async () => 
     { exit: 0, stdout: '' },
     { exit: 0, stdout: '' },
     { exit: 0, stdout: '' },
+    { exit: 0, stdout: '' },
     { exit: 0, stdout: `${'a'.repeat(40)}\n` },
   ];
   const spawnProcess = (command, args, options) => {
@@ -178,6 +179,7 @@ test('a clean checkout still fetches and rebases its named branch', async () => 
   assert.deepEqual(calls.map(({ args }) => args.slice(2)), [
     ['diff', '--name-only', '--diff-filter=U', '-z'],
     ['rev-parse', '--abbrev-ref', 'HEAD'],
+    ['add', '--', '.'],
     ['fetch', 'origin', 'main'],
     ['rebase', '--autostash', 'origin/main'],
     ['diff', '--name-only', '--diff-filter=U', '-z'],
@@ -185,11 +187,46 @@ test('a clean checkout still fetches and rebases its named branch', async () => 
   ]);
 });
 
+test('preserves an upgrade-created file while catching up with the same upstream file', async () => {
+  const workspace = await mkdtemp(path.join(tmpdir(), 'gala-upgrade-untracked-'));
+  const remote = path.join(workspace, 'remote.git');
+  const upstream = path.join(workspace, 'upstream');
+  const checkout = path.join(workspace, 'checkout');
+  const managedPath = 'lib/article-cards.js';
+
+  await runTemporaryGit(['init', '--bare', remote]);
+  await runTemporaryGit(['clone', remote, upstream]);
+  const upstreamGit = (...args) => runTemporaryGit(['-C', upstream, ...args]);
+  await upstreamGit('config', 'user.name', 'Gala test');
+  await upstreamGit('config', 'user.email', 'test@gala.invalid');
+  await writeFile(path.join(upstream, 'README.md'), 'publication\n');
+  await upstreamGit('add', '.');
+  await upstreamGit('commit', '-m', 'base');
+  await upstreamGit('push', 'origin', 'HEAD:main');
+  await runTemporaryGit(['--git-dir', remote, 'symbolic-ref', 'HEAD', 'refs/heads/main']);
+  await runTemporaryGit(['clone', remote, checkout]);
+
+  await mkdir(path.join(upstream, 'lib'), { recursive: true });
+  await writeFile(path.join(upstream, managedPath), 'managed article cards\n');
+  await upstreamGit('add', '.');
+  await upstreamGit('commit', '-m', 'remote managed files');
+  await upstreamGit('push', 'origin', 'HEAD:main');
+
+  await mkdir(path.join(checkout, 'lib'), { recursive: true });
+  await writeFile(path.join(checkout, managedPath), 'managed article cards\n');
+
+  await createGit({ root: checkout, spawnProcess: spawnTemporaryGit }).takeRemote();
+
+  assert.equal(await readFile(path.join(checkout, managedPath), 'utf8'), 'managed article cards\n');
+  assert.equal((await runTemporaryGit(['-C', checkout, 'status', '--short'])).stdout, '');
+});
+
 test('stops after a successful autostash rebase that leaves conflicts', async () => {
   const calls = [];
   const responses = [
     { exit: 0, stdout: '' },
     { exit: 0, stdout: 'main\n' },
+    { exit: 0, stdout: '' },
     { exit: 0, stdout: '' },
     { exit: 0, stdout: '' },
     { exit: 0, stdout: 'site.config.yml\0src/assets/reader.js\0' },
@@ -222,6 +259,7 @@ test('refuses managed conflict recovery when local bytes fail their manifest has
   const responses = [
     { exit: 0, stdout: '' },
     { exit: 0, stdout: 'main\n' },
+    { exit: 0, stdout: '' },
     { exit: 0, stdout: '' },
     { exit: 0, stdout: '' },
     { exit: 0, stdout: '.gala/managed-files.json\0site.config.yml\0src/assets/reader.js\0' },

@@ -104,9 +104,11 @@ export function createGit({ root, token, spawnProcess = spawn } = {}) {
      * Brings the remote's commits in, over the top of anything uncommitted.
      *
      * `--autostash` matters: this runs before the writer's work is recorded, and a rebase refuses a
-     * dirty tree. Doing it the other way round - record first, then rebase - lets the publication
-     * workflow and the local publish independently update the same file. Taking the remote first
-     * makes the post-publish validation pass the sole local writer of any missing content ID.
+     * dirty tree. Stage the same path set that publish records first, because Git otherwise excludes
+     * untracked files from its autostash and an upgrade-created managed file can block the checkout.
+     * Doing it the other way round - record first, then rebase - lets the publication workflow and
+     * the local publish independently update the same file. Taking the remote first makes the
+     * post-publish validation pass the sole local writer of any missing content ID.
      */
     async takeRemote() {
       const conflictedPaths = await unmergedPaths(run);
@@ -120,6 +122,7 @@ export function createGit({ root, token, spawnProcess = spawn } = {}) {
         throw failure;
       }
       const branch = await git.branch();
+      await run(['add', '--', '.']);
       await run(['fetch', 'origin', branch]);
       await run(['rebase', '--autostash', `origin/${branch}`]);
       const reappliedConflicts = await unmergedPaths(run);
