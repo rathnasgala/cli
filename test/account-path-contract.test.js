@@ -4,7 +4,7 @@ import test from 'node:test';
 
 import { COMMANDS } from '../src/commands-manifest.js';
 
-const authenticatedCommands = ['init', 'domain', 'publish', 'prism', 'doctor'];
+const authenticatedCommands = ['init', 'domain', 'publish', 'prism', 'theme', 'doctor'];
 
 test('every authenticated command accepts one common account selector', () => {
   for (const name of authenticatedCommands) {

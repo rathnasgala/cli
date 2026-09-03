@@ -99,6 +99,31 @@ Builds the publication and serves it locally, using the exact framework version 
 pinned to - so what you see is what gets published. The first run installs that tooling, which takes
 a moment. Stop it with Ctrl-C.
 
+## Appearance themes
+
+List the official releases Gala has reviewed and see which ones support this publication's pinned
+framework:
+
+```console
+npx --yes @rathnasgala/cli@latest theme list
+```
+
+Stage the newest compatible release of a theme in the checkout, inspect the complete site locally,
+and publish only after approving it:
+
+```console
+npx --yes @rathnasgala/cli@latest theme use awesome
+npx --yes @rathnasgala/cli@latest preview
+npx --yes @rathnasgala/cli@latest publish
+```
+
+`theme use` verifies the exact registered repository commit, CSS hash, and byte count before it
+updates `site.config.yml` and the local CSS artifact. It does not commit or send anything to GitHub.
+Use `--version 1.0.0` to choose an exact active release. Run `theme status` to compare the local
+choice with GitHub, or `theme use built-in` to stage a return to Gala's built-in appearance. If a
+release needs a newer framework, the command names the required version and the exact `upgrade`
+command instead of hiding the theme.
+
 ```console
 npx --yes @rathnasgala/cli@latest publish
 ```
@@ -170,6 +195,7 @@ Run any command with `--help`.
 | `preview` | Build and serve the publication locally | `--root`, `--today` |
 | `publish` | Check, record and send your work to GitHub | `--root`, `--today`, `--account`, `--skip-checks` |
 | `prism` | Manage author-approved reading configurations | `--root`, `--account`, `--language`, `--depth`, `--intent`, `--modality`, `--file`, `--reason`, `--yes` |
+| `theme` | List, stage, preview or restore an official appearance theme | `--root`, `--account`, `--version` |
 | `upgrade` | Inspect and apply a verified managed-theme update | `--root`, `--channel`, `--yes` |
 | `doctor` | Check a publication and say what is wrong | `--root`, `--account` |
 | `auth` | Add, list, select or remove GitHub-named account profiles | `--api-base-url` |

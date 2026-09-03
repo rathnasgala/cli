@@ -3,7 +3,7 @@ import { request, requestJson } from './http.js';
 /**
  * The Gala API.
  *
- * Only the calls the six commands make. v0 carried a generated client covering the whole surface -
+ * Only the calls the author commands make. v0 carried a generated client covering the whole surface -
  * comments, reactions, admin, moderation - none of which a CLI ever touches.
  */
 export const DEFAULT_API_BASE_URL = 'https://api.gala67.com';
@@ -99,6 +99,17 @@ export function galaApi({ baseUrl = DEFAULT_API_BASE_URL, token } = {}) {
 
     listPublications() {
       return requestJson(`${root}/v1/me/sites`, authorized('Publication list'));
+    },
+
+    appearanceThemeCatalog(siteId) {
+      return requestJson(`${root}/v1/sites/${encodeURIComponent(siteId)}/appearance-theme`,
+        authorized('Official theme catalog'));
+    },
+
+    appearanceThemePreview(siteId, themeId, version) {
+      return requestJson(`${root}/v1/sites/${encodeURIComponent(siteId)}/appearance-theme/`
+        + `${encodeURIComponent(themeId)}/${encodeURIComponent(version)}/preview`,
+      authorized('Official theme preview'));
     },
 
     prepareTopologyChange(siteId, body) {

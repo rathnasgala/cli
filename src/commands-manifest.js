@@ -6,6 +6,7 @@ import { createPost } from './commands/new.js';
 import { preview } from './commands/preview.js';
 import { publish } from './commands/publish.js';
 import { prism } from './commands/prism.js';
+import { theme } from './commands/theme.js';
 import { upgrade } from './commands/upgrade.js';
 import { cliCommand } from './cli/invocation.js';
 
@@ -82,6 +83,27 @@ export const COMMANDS = {
     flags: ['root', 'account', 'language', 'depth', 'intent', 'modality', 'file', 'reason'],
     switches: ['yes'],
     run: prism
+  },
+  theme: {
+    summary: 'Choose and preview an official publication theme',
+    usage: cliCommand('theme [status|list|use <theme-id|built-in>] [--version x.y.z] [--root path] [--account github-login]'),
+    help: [
+      'See the current local selection and every registered release:',
+      `    ${cliCommand('theme status')}`,
+      `    ${cliCommand('theme list')}`,
+      '',
+      'Stage the newest compatible release in this checkout, then preview it:',
+      `    ${cliCommand('theme use awesome')}`,
+      `    ${cliCommand('preview')}`,
+      '',
+      'Pin an exact release, or return to the built-in appearance:',
+      `    ${cliCommand('theme use awesome --version 1.0.0')}`,
+      `    ${cliCommand('theme use built-in')}`,
+      '',
+      `Nothing is sent to GitHub until ${cliCommand('publish')}.`
+    ].join('\n'),
+    flags: ['root', 'account', 'version'],
+    run: theme
   },
   upgrade: {
     summary: 'Inspect and apply a verified managed-theme update',
