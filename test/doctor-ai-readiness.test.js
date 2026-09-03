@@ -13,7 +13,7 @@ const runtimeFiles = [
   'src/_includes/layouts/base.njk'
 ];
 
-async function fixture(config, workflow = 'attest-build: false\n') {
+async function fixture(config, workflow = 'permissions:\n  id-token: write\n  attestations: write\nattest-build: false\n') {
   const root = await mkdtemp(path.join(os.tmpdir(), 'gala-doctor-ai-'));
   for (const relative of runtimeFiles) {
     const target = path.join(root, relative);
@@ -41,7 +41,7 @@ test('AI doctor recognises managed discovery with no author rights declaration',
   }
 });
 
-test('AI doctor verifies the exact rights digest and least-privilege attestation workflow', async () => {
+test('AI doctor verifies the exact rights digest and enabled attestation workflow', async () => {
   const declaration = {
     indexing: 'allow', aiSearch: 'allow', modelTraining: 'block',
     reuse: 'attribution-required', commercialUse: 'license-required',
@@ -67,7 +67,7 @@ test('AI doctor verifies the exact rights digest and least-privilege attestation
   }
 });
 
-test('AI doctor reports stale policy/workflow state and article improvements separately', async () => {
+test('AI doctor reports missing mandatory permissions and article improvements separately', async () => {
   const declaration = {
     indexing: 'allow', aiSearch: 'allow', modelTraining: 'block',
     reuse: 'attribution-required', commercialUse: 'block', licenseUrl: ''
@@ -86,7 +86,7 @@ test('AI doctor reports stale policy/workflow state and article improvements sep
     await writeFile(path.join(root, 'content/posts/example/index.en.md'), '---\ntitle: Example\n---\nBody\n');
     const checks = await aiReadinessChecks(root);
     assert.equal(checks[1].state, 'wrong');
-    assert.match(checks[1].detail, /workflow disagree|permissions remain enabled/);
+    assert.match(checks[1].detail, /mandatory publishing workflow permissions are missing/);
     assert.equal(checks[2].state, 'advisory');
   } finally {
     await rm(root, { recursive: true });

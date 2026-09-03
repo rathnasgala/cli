@@ -9,6 +9,7 @@ import { cliCommand } from '../cli/invocation.js';
 const PACKAGE = '@rathnasgala/theme';
 const REGISTRY = 'https://registry.npmjs.org';
 const PROTECTED = ['.git/', 'content/', 'custom.css', 'site.config.yml'];
+const WORKFLOW = '.github/workflows/publish.yml';
 
 const sha256 = (bytes) => createHash('sha256').update(bytes).digest('hex');
 const safeManagedPath = (value) => typeof value === 'string' && value !== ''
@@ -95,7 +96,50 @@ async function replaceFile(target, bytes) {
   await rename(temporary, target);
 }
 
-async function applyRelease(root, payload, installed, available) {
+function withMandatoryWorkflowPermissions(source) {
+  const newline = source.includes('\r\n') ? '\r\n' : '\n';
+  const lines = source.split(/\r?\n/);
+  const permissions = lines
+    .map((line, index) => line.trimEnd() === 'permissions:' ? index : -1)
+    .filter((index) => index >= 0);
+  if (permissions.length !== 1 || lines[permissions[0]] !== 'permissions:') {
+    throw new Error('Publishing workflow permissions are unsupported; restore the Gala-generated workflow before upgrading');
+  }
+  const start = permissions[0];
+  let end = start + 1;
+  while (end < lines.length && (lines[end].trim() === ''
+    || lines[end].trimStart().startsWith('#') || /^\s/.test(lines[end]))) end++;
+  const entry = (name) => lines
+    .map((line, index) => index > start && index < end
+      && line.startsWith(`  ${name}:`) ? index : -1)
+    .filter((index) => index >= 0);
+  const contents = entry('contents');
+  if (contents.length !== 1 || lines[contents[0]].trimEnd() !== '  contents: write') {
+    throw new Error('Publishing workflow must grant contents: write before it can be upgraded');
+  }
+  const identity = entry('id-token');
+  const attestations = entry('attestations');
+  if (identity.length > 1 || attestations.length > 1) {
+    throw new Error('Publishing workflow contains duplicate permission entries');
+  }
+  for (const index of [...identity, ...attestations].sort((left, right) => right - left)) {
+    lines.splice(index, 1);
+  }
+  const insertAfter = lines.findIndex((line, index) => index > start
+    && line.trimEnd() === '  contents: write');
+  lines.splice(insertAfter + 1, 0, '  id-token: write', '  attestations: write');
+  return lines.join(newline);
+}
+
+async function workflowMigration(root) {
+  const target = path.join(root, WORKFLOW);
+  if (!await exists(target)) return null;
+  const previous = await readFile(target, 'utf8');
+  const updated = withMandatoryWorkflowPermissions(previous);
+  return updated === previous ? null : { target, previous, updated };
+}
+
+async function applyRelease(root, payload, installed, available, workflow) {
   const configFile = path.join(root, 'site.config.yml');
   const manifestFile = path.join(root, '.gala', 'managed-files.json');
   const config = await readFile(configFile, 'utf8');
@@ -124,6 +168,7 @@ async function applyRelease(root, payload, installed, available) {
     }
     await replaceFile(configFile, updated);
     await replaceFile(manifestFile, `${JSON.stringify(available, null, 2)}\n`);
+    if (workflow != null) await replaceFile(workflow.target, workflow.updated);
   } catch (error) {
     for (const managed of Object.keys(available.files)) {
       if (installed.files[managed] == null) await rm(path.join(root, managed), { force: true });
@@ -133,6 +178,7 @@ async function applyRelease(root, payload, installed, available) {
     }
     await replaceFile(configFile, await readFile(path.join(backup, 'site.config.yml')));
     await replaceFile(manifestFile, await readFile(path.join(backup, 'managed-files.json')));
+    if (workflow != null) await replaceFile(workflow.target, workflow.previous);
     throw error;
   } finally {
     await rm(backup, { recursive: true, force: true });
@@ -145,31 +191,38 @@ export async function upgrade({ terminal, options, cwd = process.cwd(), fetchImp
   if (!['latest', 'next'].includes(channel)) throw new Error('channel must be latest or next');
   const installed = await readManifest(path.join(root, '.gala', 'managed-files.json'));
   const release = await registryRelease(channel, fetchImpl);
+  const workflow = await workflowMigration(root);
   terminal.result(`Theme ${installed.themePackage.version} → ${release.version} (${channel})`);
-  if (installed.themePackage.version === release.version) {
+  const themeChanged = installed.themePackage.version !== release.version;
+  if (!themeChanged && workflow == null) {
     terminal.note('Already current.');
     return { changed: false, version: release.version };
   }
   if (!options.on('yes')) {
-    const answer = await terminal.ask('Apply this managed theme upgrade? [y/N]', { fallback: 'no' });
+    const answer = await terminal.ask('Apply this managed publication upgrade? [y/N]', { fallback: 'no' });
     if (!/^y(?:es)?$/i.test(answer)) {
       terminal.note('Nothing changed.');
       return { changed: false, version: release.version };
     }
   }
-  await assertNoManagedDrift(root, installed);
-  const unpacked = await unpackRelease(release, fetchImpl);
-  try {
-    const available = await readManifest(path.join(unpacked.payload, '.gala', 'managed-files.json'));
-    if (available.themePackage.version !== release.version) {
-      throw new Error('Theme package version does not match its managed manifest');
+  if (themeChanged) {
+    await assertNoManagedDrift(root, installed);
+    const unpacked = await unpackRelease(release, fetchImpl);
+    try {
+      const available = await readManifest(path.join(unpacked.payload, '.gala', 'managed-files.json'));
+      if (available.themePackage.version !== release.version) {
+        throw new Error('Theme package version does not match its managed manifest');
+      }
+      await verifyPayload(unpacked.payload, available);
+      await applyRelease(root, unpacked.payload, installed, available, workflow);
+    } finally {
+      await rm(unpacked.temporary, { recursive: true, force: true });
     }
-    await verifyPayload(unpacked.payload, available);
-    await applyRelease(root, unpacked.payload, installed, available);
-  } finally {
-    await rm(unpacked.temporary, { recursive: true, force: true });
+    terminal.done(`Upgraded managed theme to ${release.version}`);
+  } else {
+    await replaceFile(workflow.target, workflow.updated);
   }
-  terminal.done(`Upgraded managed theme to ${release.version}`);
+  if (workflow != null) terminal.done('Updated publishing workflow permissions');
   terminal.note(`Run ${cliCommand('preview')}, then ${cliCommand('publish')} when the result is approved.`);
   return { changed: true, version: release.version };
 }

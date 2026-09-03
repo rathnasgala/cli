@@ -58,16 +58,64 @@ test('refuses a channel outside the two documented release tracks', async () => 
   );
 });
 
+test('migrates mandatory workflow permissions even when the theme is already current', async () => {
+  const root = await installedSite();
+  await mkdir(path.join(root, '.github', 'workflows'), { recursive: true });
+  const workflow = path.join(root, '.github', 'workflows', 'publish.yml');
+  await writeFile(workflow, `name: Publish
+permissions:
+  contents: write
+jobs:
+  publish:
+    uses: rathnasgala/publish/.github/workflows/publish.yml@v1
+`);
+  const fetchImpl = async () => new Response(JSON.stringify({
+    'dist-tags': { latest: '2.0.0' },
+    versions: { '2.0.0': { dist: { tarball: 'https://registry.example/theme.tgz', integrity: 'sha512-AA==' } } },
+  }));
+
+  const result = await upgrade({
+    terminal: terminal(), options: options({ root }, { yes: true }), fetchImpl,
+  });
+
+  assert.deepEqual(result, { changed: true, version: '2.0.0' });
+  assert.match(await readFile(workflow, 'utf8'),
+    /permissions:\n  contents: write\n  id-token: write\n  attestations: write\n/);
+  const second = await upgrade({ terminal: terminal(), options: options({ root }), fetchImpl });
+  assert.deepEqual(second, { changed: false, version: '2.0.0' });
+});
+
+test('refuses an unsupported workflow without changing it', async () => {
+  const root = await installedSite();
+  await mkdir(path.join(root, '.github', 'workflows'), { recursive: true });
+  const workflow = path.join(root, '.github', 'workflows', 'publish.yml');
+  const original = 'permissions:\n  contents: read\n';
+  await writeFile(workflow, original);
+  const fetchImpl = async () => new Response(JSON.stringify({
+    'dist-tags': { latest: '2.0.0' },
+    versions: { '2.0.0': { dist: { tarball: 'https://registry.example/theme.tgz', integrity: 'sha512-AA==' } } },
+  }));
+
+  await assert.rejects(
+    () => upgrade({ terminal: terminal(), options: options({ root }, { yes: true }), fetchImpl }),
+    /must grant contents: write/,
+  );
+  assert.equal(await readFile(workflow, 'utf8'), original);
+});
+
 test('commits the new managed manifest so the installed release is coherent', async () => {
   const temporary = await mkdtemp(path.join(tmpdir(), 'gala-upgrade-test-'));
   const site = path.join(temporary, 'site');
   const packageRoot = path.join(temporary, 'package');
   const payload = path.join(packageRoot, 'payload');
   await mkdir(path.join(site, '.gala'), { recursive: true });
+  await mkdir(path.join(site, '.github', 'workflows'), { recursive: true });
   await mkdir(path.join(payload, '.gala'), { recursive: true });
   const oldBytes = Buffer.from('old runtime\n');
   const newBytes = Buffer.from('new runtime\n');
   await writeFile(path.join(site, 'runtime.js'), oldBytes);
+  await writeFile(path.join(site, '.github', 'workflows', 'publish.yml'),
+    'permissions:\n  contents: write\n');
   await writeFile(path.join(site, 'site.config.yml'), 'framework:\n  themePackage:\n    version: 1.0.0\n');
   const installed = {
     schemaVersion: 1,
@@ -96,6 +144,8 @@ test('commits the new managed manifest so the installed release is coherent', as
   await upgrade({ terminal: terminal(), options: options({ root: site }, { yes: true }), fetchImpl });
 
   assert.equal(await readFile(path.join(site, 'runtime.js'), 'utf8'), 'new runtime\n');
+  assert.match(await readFile(path.join(site, '.github', 'workflows', 'publish.yml'), 'utf8'),
+    /contents: write\n  id-token: write\n  attestations: write/);
   assert.deepEqual(
     JSON.parse(await readFile(path.join(site, '.gala', 'managed-files.json'), 'utf8')),
     available,

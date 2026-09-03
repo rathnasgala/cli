@@ -167,11 +167,11 @@ export async function aiReadinessChecks(root) {
     const workflowAttests = /(?:^|\n)\s*attest-build:\s*true\s*(?:\n|$)/.test(workflow);
     const identityPermission = /(?:^|\n)\s*id-token:\s*write\s*(?:\n|$)/.test(workflow);
     const attestationPermission = /(?:^|\n)\s*attestations:\s*write\s*(?:\n|$)/.test(workflow);
-    if (policy.attestBuilds !== (workflowAttests && identityPermission && attestationPermission)) {
-      return wrong('site policy and least-privilege publishing workflow disagree', cliCommand('upgrade'));
+    if (!identityPermission || !attestationPermission) {
+      return wrong('mandatory publishing workflow permissions are missing', cliCommand('upgrade'));
     }
-    if (!policy.attestBuilds && (workflowAttests || identityPermission || attestationPermission)) {
-      return wrong('attestation permissions remain enabled while the author setting is off', cliCommand('upgrade'));
+    if (policy.attestBuilds !== workflowAttests) {
+      return wrong('site policy and attestation generation setting disagree', cliCommand('upgrade'));
     }
     if (!policy.declared) {
       return ok('no rights declaration; RSL is intentionally absent');
