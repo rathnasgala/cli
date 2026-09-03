@@ -9,6 +9,7 @@ import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 
 import { credentialEnvironment } from './credential-fixture.js';
+import { runTemporaryGit, temporaryGitEnvironment } from './temporary-git.js';
 
 const run = promisify(execFile);
 const entry = fileURLToPath(new URL('../src/index.js', import.meta.url));
@@ -168,9 +169,9 @@ test('Prism status and create use committed server state and an idempotency key'
     expiresAt: new Date(Date.now() + 300_000).toISOString(),
   });
   const invoke = (args) => run(process.execPath, [entry, ...args, '--account', 'test'], {
-    cwd: root, env: environment,
+    cwd: root, env: temporaryGitEnvironment(environment, root),
   });
-  await run('git', ['init'], { cwd: root });
+  await runTemporaryGit(['init'], { cwd: root });
 
   const status = await invoke(['prism', 'status']);
   assert.match(status.stdout, /Prism MANUAL/);

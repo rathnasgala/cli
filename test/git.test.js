@@ -1,16 +1,13 @@
 import assert from 'node:assert/strict';
-import { execFile } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { EventEmitter } from 'node:events';
 import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
-import { promisify } from 'node:util';
 
 import { cloneRepository, createGit, populateEmptyRepository } from '../src/git.js';
-
-const execute = promisify(execFile);
+import { runTemporaryGit, spawnTemporaryGit } from './temporary-git.js';
 
 function recorder({ exit = 0, stdout = '' } = {}) {
   const calls = [];
@@ -124,7 +121,7 @@ test('refuses unresolved conflicts before fetching or rebasing and names every f
 
 test('leaves a real conflicted worktree and its unmerged index byte-for-byte untouched', async () => {
   const root = await mkdtemp(path.join(tmpdir(), 'gala-conflicted-publication-'));
-  const git = (...args) => execute('git', ['-C', root, ...args]);
+  const git = (...args) => runTemporaryGit(['-C', root, ...args]);
   const article = path.join(root, 'index.en.md');
 
   await git('init', '--initial-branch=main');
@@ -144,7 +141,10 @@ test('leaves a real conflicted worktree and its unmerged index byte-for-byte unt
   const beforeBody = await readFile(article);
   const beforeIndex = (await git('ls-files', '--unmerged')).stdout;
 
-  await assert.rejects(createGit({ root }).takeRemote(), /Git has unresolved conflicts/);
+  await assert.rejects(
+    createGit({ root, spawnProcess: spawnTemporaryGit }).takeRemote(),
+    /Git has unresolved conflicts/
+  );
 
   assert.deepEqual(await readFile(article), beforeBody);
   assert.equal((await git('ls-files', '--unmerged')).stdout, beforeIndex);
@@ -252,28 +252,28 @@ test('detects a real autostash conflict after Git reports a successful rebase', 
   const remote = path.join(workspace, 'remote.git');
   const upstream = path.join(workspace, 'upstream');
   const checkout = path.join(workspace, 'checkout');
-  await execute('git', ['init', '--bare', remote]);
-  await execute('git', ['clone', remote, upstream]);
-  const upstreamGit = (...args) => execute('git', ['-C', upstream, ...args]);
+  await runTemporaryGit(['init', '--bare', remote]);
+  await runTemporaryGit(['clone', remote, upstream]);
+  const upstreamGit = (...args) => runTemporaryGit(['-C', upstream, ...args]);
   await upstreamGit('config', 'user.name', 'Gala test');
   await upstreamGit('config', 'user.email', 'test@gala.invalid');
   await writeFile(path.join(upstream, 'site.config.yml'), 'version: 1\n');
   await upstreamGit('add', 'site.config.yml');
   await upstreamGit('commit', '-m', 'base');
   await upstreamGit('push', 'origin', 'HEAD:main');
-  await execute('git', ['--git-dir', remote, 'symbolic-ref', 'HEAD', 'refs/heads/main']);
-  await execute('git', ['clone', remote, checkout]);
+  await runTemporaryGit(['--git-dir', remote, 'symbolic-ref', 'HEAD', 'refs/heads/main']);
+  await runTemporaryGit(['clone', remote, checkout]);
   await writeFile(path.join(upstream, 'site.config.yml'), 'version: 2\n');
   await upstreamGit('commit', '-am', 'remote theme');
   await upstreamGit('push', 'origin', 'HEAD:main');
   await writeFile(path.join(checkout, 'site.config.yml'), 'version: 3\n');
 
   await assert.rejects(
-    createGit({ root: checkout }).takeRemote(),
+    createGit({ root: checkout, spawnProcess: spawnTemporaryGit }).takeRemote(),
     /could not reapply your local work without conflicts/
   );
   assert.match(await readFile(path.join(checkout, 'site.config.yml'), 'utf8'), /<<<<<<< Updated upstream/);
-  assert.match((await execute('git', ['-C', checkout, 'status', '--short'])).stdout, /UU site\.config\.yml/);
+  assert.match((await runTemporaryGit(['-C', checkout, 'status', '--short'])).stdout, /UU site\.config\.yml/);
 });
 
 test('replays only the verified theme version over an upstream custom-domain change', async () => {
@@ -296,17 +296,17 @@ test('replays only the verified theme version over an upstream custom-domain cha
     await writeFile(path.join(directory, 'site.config.yml'), config(version));
     await writeFile(path.join(directory, 'src/assets/reader.js'), reader);
   };
-  await execute('git', ['init', '--bare', remote]);
-  await execute('git', ['clone', remote, upstream]);
-  const upstreamGit = (...args) => execute('git', ['-C', upstream, ...args]);
+  await runTemporaryGit(['init', '--bare', remote]);
+  await runTemporaryGit(['clone', remote, upstream]);
+  const upstreamGit = (...args) => runTemporaryGit(['-C', upstream, ...args]);
   await upstreamGit('config', 'user.name', 'Gala test');
   await upstreamGit('config', 'user.email', 'test@gala.invalid');
   await writeTheme(upstream, '1.0.0');
   await upstreamGit('add', '.');
   await upstreamGit('commit', '-m', 'base');
   await upstreamGit('push', 'origin', 'HEAD:main');
-  await execute('git', ['--git-dir', remote, 'symbolic-ref', 'HEAD', 'refs/heads/main']);
-  await execute('git', ['clone', remote, checkout]);
+  await runTemporaryGit(['--git-dir', remote, 'symbolic-ref', 'HEAD', 'refs/heads/main']);
+  await runTemporaryGit(['clone', remote, checkout]);
   await writeTheme(upstream, '2.0.0');
   await writeFile(path.join(upstream, 'site.config.yml'),
     config('2.0.0', 'https://blog.example.com', '/'));
@@ -314,10 +314,10 @@ test('replays only the verified theme version over an upstream custom-domain cha
   await upstreamGit('push', 'origin', 'HEAD:main');
   await writeTheme(checkout, '3.0.0');
 
-  await execute('git', ['-C', checkout, 'fetch', 'origin', 'main']);
-  await execute('git', ['-C', checkout, 'rebase', '--autostash', 'origin/main']);
-  assert.match((await execute('git', ['-C', checkout, 'status', '--short'])).stdout, /^UU /m);
-  await createGit({ root: checkout }).takeRemote();
+  await runTemporaryGit(['-C', checkout, 'fetch', 'origin', 'main']);
+  await runTemporaryGit(['-C', checkout, 'rebase', '--autostash', 'origin/main']);
+  assert.match((await runTemporaryGit(['-C', checkout, 'status', '--short'])).stdout, /^UU /m);
+  await createGit({ root: checkout, spawnProcess: spawnTemporaryGit }).takeRemote();
 
   assert.equal(await readFile(path.join(checkout, 'src/assets/reader.js'), 'utf8'), 'reader-3.0.0\n');
   const resolved = await readFile(path.join(checkout, 'site.config.yml'), 'utf8');
@@ -325,7 +325,7 @@ test('replays only the verified theme version over an upstream custom-domain cha
   assert.match(resolved, /canonicalBaseUrl: https:\/\/blog\.example\.com/);
   assert.match(resolved, /pathPrefix: \/$/m);
   assert.doesNotMatch(resolved, /writer\.github\.io/);
-  assert.doesNotMatch((await execute('git', ['-C', checkout, 'status', '--short'])).stdout, /^UU /m);
+  assert.doesNotMatch((await runTemporaryGit(['-C', checkout, 'status', '--short'])).stdout, /^UU /m);
 });
 
 test('populates an empty git repository without replacing its metadata directory', async () => {
