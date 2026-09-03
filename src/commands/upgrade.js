@@ -3,6 +3,7 @@ import { copyFile, lstat, mkdtemp, mkdir, readFile, rename, rm, stat, writeFile 
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { x as extractTar } from 'tar';
+import { parseDocument } from 'yaml';
 
 import { cliCommand } from '../cli/invocation.js';
 
@@ -139,15 +140,47 @@ async function workflowMigration(root) {
   return updated === previous ? null : { target, previous, updated };
 }
 
+function withRequiredPerformanceBudgets(source, required) {
+  const fields = ['managedJavaScriptBytes', 'managedCssBytes'];
+  if (required == null || Array.isArray(required) || typeof required !== 'object'
+      || !fields.every((field) => Number.isSafeInteger(required[field]) && required[field] > 0)) {
+    throw new Error('Theme managed-file manifest has invalid required budgets');
+  }
+  const document = parseDocument(source);
+  if (document.errors.length > 0) throw new Error('site.config.yml is invalid');
+  let changed = false;
+  for (const field of fields) {
+    const pathToBudget = ['performance', 'budgets', field];
+    const current = document.getIn(pathToBudget);
+    if (current != null && (!Number.isSafeInteger(current) || current <= 0)) {
+      throw new Error(`site.config.yml performance.budgets.${field} must be a positive integer`);
+    }
+    if (current == null || current < required[field]) {
+      document.setIn(pathToBudget, required[field]);
+      changed = true;
+    }
+  }
+  return changed ? document.toString() : source;
+}
+
+async function performanceBudgetMigration(root, required) {
+  if (required == null) return null;
+  const target = path.join(root, 'site.config.yml');
+  const previous = await readFile(target, 'utf8');
+  const updated = withRequiredPerformanceBudgets(previous, required);
+  return updated === previous ? null : { target, updated };
+}
+
 async function applyRelease(root, payload, installed, available, workflow) {
   const configFile = path.join(root, 'site.config.yml');
   const manifestFile = path.join(root, '.gala', 'managed-files.json');
   const config = await readFile(configFile, 'utf8');
-  const updated = config.replace(
+  const versioned = config.replace(
     /(themePackage:\s*\n(?:\s+.*\n)*?\s+version:\s*)[^\s#]+/,
     `$1${available.themePackage.version}`,
   );
-  if (updated === config) throw new Error('site.config.yml has no framework.themePackage.version');
+  if (versioned === config) throw new Error('site.config.yml has no framework.themePackage.version');
+  const updated = withRequiredPerformanceBudgets(versioned, available.requiredBudgets);
   const backup = await mkdtemp(path.join(tmpdir(), 'gala-theme-rollback-'));
   const previousFiles = Object.keys(installed.files);
   try {
@@ -192,9 +225,10 @@ export async function upgrade({ terminal, options, cwd = process.cwd(), fetchImp
   const installed = await readManifest(path.join(root, '.gala', 'managed-files.json'));
   const release = await registryRelease(channel, fetchImpl);
   const workflow = await workflowMigration(root);
+  const budgetMigration = await performanceBudgetMigration(root, installed.requiredBudgets);
   terminal.result(`Theme ${installed.themePackage.version} → ${release.version} (${channel})`);
   const themeChanged = installed.themePackage.version !== release.version;
-  if (!themeChanged && workflow == null) {
+  if (!themeChanged && workflow == null && budgetMigration == null) {
     terminal.note('Already current.');
     return { changed: false, version: release.version };
   }
@@ -220,9 +254,11 @@ export async function upgrade({ terminal, options, cwd = process.cwd(), fetchImp
     }
     terminal.done(`Upgraded managed theme to ${release.version}`);
   } else {
-    await replaceFile(workflow.target, workflow.updated);
+    if (workflow != null) await replaceFile(workflow.target, workflow.updated);
+    if (budgetMigration != null) await replaceFile(budgetMigration.target, budgetMigration.updated);
   }
   if (workflow != null) terminal.done('Updated publishing workflow permissions');
+  if (budgetMigration != null) terminal.done('Updated performance budgets');
   terminal.note(`Run ${cliCommand('preview')}, then ${cliCommand('publish')} when the result is approved.`);
   return { changed: true, version: release.version };
 }

@@ -50,6 +50,44 @@ test('reports an exact current release without downloading or changing files', a
   assert.match(output.messages.join('\n'), /Already current/);
 });
 
+test('repairs stale performance budgets when the managed theme is already current', async () => {
+  const root = await installedSite();
+  await writeFile(path.join(root, '.gala', 'managed-files.json'), JSON.stringify({
+    schemaVersion: 1,
+    themePackage: { name: '@rathnasgala/theme', version: '2.0.0' },
+    requiredBudgets: { managedJavaScriptBytes: 94208, managedCssBytes: 36864 },
+    files: {},
+  }));
+  await writeFile(path.join(root, 'site.config.yml'), `framework:
+  themePackage:
+    version: 2.0.0
+performance:
+  budgets:
+    managedJavaScriptBytes: 87040
+    managedCssBytes: 34816
+    ordinaryHtmlBytes: 32768
+`);
+  const output = terminal();
+  const fetchImpl = async () => new Response(JSON.stringify({
+    'dist-tags': { latest: '2.0.0' },
+    versions: {
+      '2.0.0': { dist: { tarball: 'https://registry.example/theme.tgz', integrity: 'sha512-AA==' } },
+    },
+  }));
+
+  const result = await upgrade({
+    terminal: output, options: options({ root }, { yes: true }), fetchImpl,
+  });
+
+  assert.deepEqual(result, { changed: true, version: '2.0.0' });
+  const upgradedConfig = await readFile(path.join(root, 'site.config.yml'), 'utf8');
+  assert.match(upgradedConfig, /managedJavaScriptBytes: 94208/);
+  assert.match(upgradedConfig, /managedCssBytes: 36864/);
+  assert.match(output.messages.join('\n'), /Updated performance budgets/);
+  const second = await upgrade({ terminal: terminal(), options: options({ root }), fetchImpl });
+  assert.deepEqual(second, { changed: false, version: '2.0.0' });
+});
+
 test('refuses a channel outside the two documented release tracks', async () => {
   const root = await installedSite();
   await assert.rejects(
@@ -116,7 +154,15 @@ test('commits the new managed manifest so the installed release is coherent', as
   await writeFile(path.join(site, 'runtime.js'), oldBytes);
   await writeFile(path.join(site, '.github', 'workflows', 'publish.yml'),
     'permissions:\n  contents: write\n');
-  await writeFile(path.join(site, 'site.config.yml'), 'framework:\n  themePackage:\n    version: 1.0.0\n');
+  await writeFile(path.join(site, 'site.config.yml'), `framework:
+  themePackage:
+    version: 1.0.0
+performance:
+  budgets:
+    managedJavaScriptBytes: 100000
+    managedCssBytes: 34816
+    ordinaryHtmlBytes: 32768
+`);
   const installed = {
     schemaVersion: 1,
     themePackage: { name: '@rathnasgala/theme', version: '1.0.0' },
@@ -127,6 +173,7 @@ test('commits the new managed manifest so the installed release is coherent', as
   const available = {
     schemaVersion: 1,
     themePackage: { name: '@rathnasgala/theme', version: '2.0.0' },
+    requiredBudgets: { managedJavaScriptBytes: 94208, managedCssBytes: 36864 },
     files: { 'runtime.js': createHash('sha256').update(newBytes).digest('hex') },
   };
   await writeFile(path.join(payload, '.gala', 'managed-files.json'), JSON.stringify(available));
@@ -150,6 +197,10 @@ test('commits the new managed manifest so the installed release is coherent', as
     JSON.parse(await readFile(path.join(site, '.gala', 'managed-files.json'), 'utf8')),
     available,
   );
+  const upgradedConfig = await readFile(path.join(site, 'site.config.yml'), 'utf8');
+  assert.match(upgradedConfig, /managedJavaScriptBytes: 100000/);
+  assert.match(upgradedConfig, /managedCssBytes: 36864/);
+  assert.match(upgradedConfig, /ordinaryHtmlBytes: 32768/);
   const second = await upgrade({ terminal: terminal(), options: options({ root: site }), fetchImpl });
   assert.deepEqual(second, { changed: false, version: '2.0.0' });
 });
