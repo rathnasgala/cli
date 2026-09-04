@@ -56,13 +56,17 @@ export async function theme({ terminal, options, cwd = process.cwd() }) {
 
   if (action === 'list') {
     terminal.result(`Official themes for framework ${local.frameworkVersion}`);
-    if (catalog.releases.length === 0) terminal.note('No active official themes are registered.');
-    for (const release of catalog.releases) {
+    const releases = [...catalog.releases, ...catalog.updateRequiredReleases];
+    if (releases.length === 0) terminal.note('No official themes are available for this publication.');
+    for (const release of releases) {
       const compatible = supports(release, local.frameworkVersion);
       terminal.note(`${compatible ? 'available' : 'upgrade required'}  ${release.themeId} ${release.version} — ${release.displayName}`);
-      if (!compatible) terminal.note(`  requires framework ${release.minimumFrameworkVersion} to before ${release.maximumFrameworkVersionExclusive}`);
+      if (!compatible) terminal.note(`  works with framework ${release.minimumFrameworkVersion} up to, but not including, ${release.maximumFrameworkVersionExclusive}`);
     }
-    return catalog.releases;
+    if (catalog.updateCheckUnavailable) {
+      terminal.note('Gala could not check for additional themes. Try theme list again shortly.');
+    }
+    return releases;
   }
 
   if (value === 'built-in') {
@@ -82,10 +86,11 @@ export async function theme({ terminal, options, cwd = process.cwd() }) {
   if (requestedVersion != null && !VERSION.test(requestedVersion)) {
     throw new UsageError('--version must be an exact semantic version such as 1.0.0');
   }
-  const matching = catalog.releases.filter((release) => release.themeId === value
+  const offered = [...catalog.releases, ...catalog.updateRequiredReleases];
+  const matching = offered.filter((release) => release.themeId === value
     && (requestedVersion == null || release.version === requestedVersion));
   if (matching.length === 0) {
-    const available = [...new Set(catalog.releases.map((release) => release.themeId))];
+    const available = [...new Set(offered.map((release) => release.themeId))];
     throw new UsageError(available.length === 0
       ? 'No active official themes are registered.'
       : `Theme ${value}${requestedVersion ? ` ${requestedVersion}` : ''} is not active. Available themes: ${available.join(', ')}.`);
@@ -105,7 +110,19 @@ export async function theme({ terminal, options, cwd = process.cwd() }) {
   const preview = validatePreview(
     await api.appearanceThemePreview(publication.siteId, release.themeId, release.version), release);
   const baseline = local.selection?.baseManagedCssBytes ?? local.managedCssBytes;
-  const nextBudget = Math.max(local.managedCssBytes, baseline + release.cssBytes);
+  let authorHeadroom = 0;
+  if (local.selection != null) {
+    const previousRequirement = local.selection.baseManagedCssBytes + local.selection.cssBytes;
+    if (!Number.isSafeInteger(previousRequirement)
+        || local.managedCssBytes < previousRequirement) {
+      throw new TypeError('site.config.yml has an invalid appearance theme CSS budget');
+    }
+    authorHeadroom = local.managedCssBytes - previousRequirement;
+  }
+  const nextBudget = baseline + release.cssBytes + authorHeadroom;
+  if (!Number.isSafeInteger(nextBudget)) {
+    throw new TypeError('The official theme CSS budget is too large');
+  }
   const selection = {
     id: release.themeId,
     version: release.version,
@@ -133,10 +150,26 @@ function validateCatalog(value) {
       || !VERSION.test(value.frameworkVersion ?? '') || !Array.isArray(value.releases)) {
     throw new TypeError('Gala returned an invalid official theme catalog');
   }
+  if (value.updateRequiredReleases != null && !Array.isArray(value.updateRequiredReleases)) {
+    throw new TypeError('Gala returned an invalid official theme catalog');
+  }
+  if (value.updateCheckUnavailable != null
+      && typeof value.updateCheckUnavailable !== 'boolean') {
+    throw new TypeError('Gala returned an invalid official theme catalog');
+  }
+  const releases = value.releases.map(validateRelease);
+  const updateRequiredReleases = (value.updateRequiredReleases ?? []).map(validateRelease);
+  const immediate = new Set(releases.map((release) => `${release.themeId}:${release.version}`));
+  if (updateRequiredReleases.some((release) => immediate.has(
+    `${release.themeId}:${release.version}`))) {
+    throw new TypeError('Gala returned an invalid official theme catalog');
+  }
   return {
     frameworkVersion: value.frameworkVersion,
     selected: value.selected == null ? null : validateSelection(value.selected),
-    releases: value.releases.map(validateRelease),
+    releases,
+    updateRequiredReleases,
+    updateCheckUnavailable: value.updateCheckUnavailable ?? false,
   };
 }
 
@@ -246,12 +279,17 @@ function sameSelection(local, remote) {
 }
 
 function removeAppearanceTheme(source) {
+  const configuration = readLocalConfiguration(source);
   const match = /^appearanceTheme:\s*$/m.exec(source);
   if (!match) return source;
   const after = source.slice(match.index + match[0].length);
   const next = /\n(?=[^\s#][^\n]*$)/m.exec(after);
   const end = next ? match.index + match[0].length + next.index + 1 : source.length;
-  return `${source.slice(0, match.index)}${source.slice(end)}`.replace(/\n{3,}/g, '\n\n');
+  const without = `${source.slice(0, match.index)}${source.slice(end)}`.replace(/\n{3,}/g, '\n\n');
+  const restored = Math.max(configuration.selection.baseManagedCssBytes,
+    configuration.managedCssBytes - configuration.selection.cssBytes);
+  return without.replace(/^(\s+managedCssBytes:\s*)([0-9]+)(\s*)$/m,
+    (_, prefix, _value, suffix) => `${prefix}${restored}${suffix}`);
 }
 
 function applyAppearanceTheme(source, selection, managedCssBytes) {

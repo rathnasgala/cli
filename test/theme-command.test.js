@@ -44,6 +44,7 @@ performance:
     const cssSha256 = createHash('sha256').update(css).digest('hex');
     let corruptPreview = false;
     let remoteFramework = '2.0.32';
+    let additiveCatalog = false;
     const release = {
       themeId: 'awesome', version: '1.0.0', displayName: 'Awesome',
       description: 'Expressive editorial styling.', repositoryOwner: 'rathnasgala',
@@ -56,7 +57,16 @@ performance:
     const server = createServer((request, response) => {
       response.setHeader('content-type', 'application/json');
       if (request.method === 'GET' && request.url === `/v1/sites/${siteId}/appearance-theme`) {
-        response.end(JSON.stringify({ selected: null, frameworkVersion: remoteFramework, releases: [release] }));
+        const compatible = remoteFramework !== '2.0.31';
+        response.end(JSON.stringify({
+          selected: null,
+          frameworkVersion: remoteFramework,
+          releases: compatible ? [release] : [],
+          ...(additiveCatalog ? {
+            updateRequiredReleases: compatible ? [] : [release],
+            updateCheckUnavailable: false,
+          } : {}),
+        }));
         return;
       }
       if (request.method === 'GET'
@@ -100,7 +110,26 @@ performance:
     assert.match(status.stdout, /local selection differs from GitHub/);
     const restored = await invoke(['theme', 'use', 'built-in']);
     assert.match(restored.stdout, /Staged the built-in Gala appearance/);
-    assert.equal(parse(await readFile(path.join(root, 'site.config.yml'), 'utf8')).appearanceTheme, undefined);
+    const restoredConfiguration = parse(await readFile(path.join(root, 'site.config.yml'), 'utf8'));
+    assert.equal(restoredConfiguration.appearanceTheme, undefined);
+    assert.equal(restoredConfiguration.performance.budgets.managedCssBytes, 36864);
+
+    const priorTheme = `${configuration('2.0.32').replace(
+      'managedCssBytes: 36864', 'managedCssBytes: 39936',
+    )}appearanceTheme:
+  id: old-theme
+  version: 1.0.0
+  repository: "rathnasgala/theme-old"
+  commitSha: ${'c'.repeat(40)}
+  cssSha256: ${'d'.repeat(64)}
+  cssBytes: 2048
+  baseManagedCssBytes: 36864
+`;
+    await writeFile(path.join(root, 'site.config.yml'), priorTheme);
+    await invoke(['theme', 'use', 'awesome']);
+    const switched = parse(await readFile(path.join(root, 'site.config.yml'), 'utf8'));
+    assert.equal(switched.performance.budgets.managedCssBytes, 36864 + 1024 + cssBytes);
+    assert.equal(switched.appearanceTheme.id, 'awesome');
 
     await writeFile(path.join(root, 'site.config.yml'), configuration('2.0.31'));
     const unavailable = await invoke(['theme', 'list']);
@@ -113,6 +142,7 @@ performance:
 
     await writeFile(path.join(root, 'site.config.yml'), configuration('2.0.33'));
     remoteFramework = '2.0.31';
+    additiveCatalog = true;
     await assert.rejects(invoke(['theme', 'use', 'awesome']), (failure) => {
       assert.match(failure.stderr, /local framework 2\.0\.33 supports Awesome/);
       assert.match(failure.stderr, /GitHub still has framework 2\.0\.31/);
